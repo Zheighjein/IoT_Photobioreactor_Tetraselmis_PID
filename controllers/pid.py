@@ -1,7 +1,7 @@
 import time
 
 class PID:
-    def __init__(self, Kp, Ki, Kd, setpoint=7.5, output_limits=(0, 1)):
+    def __init__(self, Kp, Ki, Kd, setpoint=7.5, output_limits=(-1, 1)):
         self.Kp = Kp
         self.Ki = Ki
         self.Kd = Kd
@@ -12,7 +12,7 @@ class PID:
         self.integral = 0
         self.last_time = time.time()
 
-        self.min_output, self.max_output = output_limits
+        self.min_output, self.max_output = (-1, 1)
 
     def compute(self, current_value):
         current_time = time.time()

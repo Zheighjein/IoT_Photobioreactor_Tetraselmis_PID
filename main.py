@@ -16,7 +16,7 @@ SIM_MODE = os.getenv("SIM_MODE", "true").lower() == "true"
 SETPOINT = float(os.getenv("SP", 7.5))
 DT = float(os.getenv("DT", 1))
 
-MODE = "AUTOTUNE"   # Options: AUTOTUNE → PID → ONOFF
+MODE = "ONOFF"   # AUTOTUNE → PID → ONOFF
 
 # ========================
 # LOAD SIMULATOR
@@ -44,14 +44,15 @@ if MODE == "AUTOTUNE":
     co2 = 0
 
     while True:
-        # Get simulated pH
         ph = sim.step(co2)
 
         print(f"[AUTOTUNE] pH: {ph:.3f}")
 
         # Relay control
         output = autotune.step(ph)
-        co2 = 1 if output > 0 else 0
+
+        # ✅ FIX: correct direction
+        co2 = 1 if output < 0 else 0
 
         autotune.record(ph)
 
@@ -73,7 +74,6 @@ if MODE == "AUTOTUNE":
 
         time.sleep(DT)
 
-    # Initialize PID with tuned values
     pid = PID(Kp, Ki, Kd, setpoint=SETPOINT)
     MODE = "PID"
 
@@ -88,10 +88,8 @@ try:
     while True:
         current_time = time.time() - start_time
 
-        # Get simulated pH
         ph = sim.step(co2)
 
-        # Error + IAE
         error = abs(SETPOINT - ph)
         total_iae += error
 
@@ -100,7 +98,12 @@ try:
         # ========================
         if MODE == "PID":
             output = pid.compute(ph)
-            co2 = 1 if output > 0 else 0
+
+            # ✅ FIX: correct direction
+            co2 = 1 if output < 0 else 0
+
+            # 🔍 DEBUG (you can remove later)
+            print(f"PID Output: {output:.4f}")
 
         elif MODE == "ONOFF":
             action = onoff_control(ph, SETPOINT)

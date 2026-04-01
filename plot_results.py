@@ -10,12 +10,12 @@ df_onoff = pd.read_csv("onoff_log.csv")
 # ========================
 # PLOT pH COMPARISON
 # ========================
-plt.figure()
+plt.figure(figsize=(10, 5))
 
-plt.plot(df_pid["time"], df_pid["ph"], label="PID")
-plt.plot(df_onoff["time"], df_onoff["ph"], label="ON/OFF")
+plt.plot(df_pid["time"], df_pid["ph"], label="PID", linewidth=2)
+plt.plot(df_onoff["time"], df_onoff["ph"], label="ON/OFF", linewidth=2)
 
-# Plot setpoint (from PID file)
+# Setpoint
 plt.plot(df_pid["time"], df_pid["setpoint"], linestyle="--", label="Setpoint")
 
 plt.xlabel("Time (s)")
@@ -24,7 +24,9 @@ plt.title("PID vs ON/OFF pH Control Comparison")
 plt.legend()
 plt.grid()
 
-plt.show()
+# ✅ SAVE INSTEAD OF SHOW
+plt.savefig("ph_comparison.png", dpi=300)
+print("Saved: ph_comparison.png")
 
 # ========================
 # CALCULATE IAE
@@ -39,10 +41,10 @@ print(f"ON/OFF IAE: {iae_onoff:.4f}")
 # ========================
 # ERROR PLOT
 # ========================
-plt.figure()
+plt.figure(figsize=(10, 5))
 
-plt.plot(df_pid["time"], df_pid["error"], label="PID Error")
-plt.plot(df_onoff["time"], df_onoff["error"], label="ON/OFF Error")
+plt.plot(df_pid["time"], df_pid["error"], label="PID Error", linewidth=2)
+plt.plot(df_onoff["time"], df_onoff["error"], label="ON/OFF Error", linewidth=2)
 
 plt.xlabel("Time (s)")
 plt.ylabel("Error")
@@ -50,4 +52,6 @@ plt.title("Error Comparison (PID vs ON/OFF)")
 plt.legend()
 plt.grid()
 
-plt.show()
+# ✅ SAVE
+plt.savefig("error_comparison.png", dpi=300)
+print("Saved: error_comparison.png")

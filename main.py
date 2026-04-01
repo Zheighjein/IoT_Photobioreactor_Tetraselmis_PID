@@ -16,7 +16,7 @@ SIM_MODE = os.getenv("SIM_MODE", "true").lower() == "true"
 SETPOINT = float(os.getenv("SP", 7.5))
 DT = float(os.getenv("DT", 1))
 
-MODE = "ONOFF"   # AUTOTUNE → PID → ONOFF
+MODE = "AUTOTUNE"   # CHANGE THIS TO AUTOTUNE / ONOFF #DEPENDS ON THE MODE BUT MAKE SURE TO RUN EACH FOR ATLEAST 30-60 SECS
 
 # ========================
 # LOAD SIMULATOR

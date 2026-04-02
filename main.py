@@ -1,150 +1,123 @@
 import time
 import os
-import pandas as pd
 from dotenv import load_dotenv
 
 from controllers.pid import PID
 from controllers.onoff import onoff_control
 from controllers.autotune import RelayAutotune
 
+from simulator.tetraselmis_sim import TetraselmisSim
+from database.db import *
+
 # ========================
-# LOAD ENV VARIABLES
+# INIT
 # ========================
 load_dotenv()
+init_db()
 
-SIM_MODE = os.getenv("SIM_MODE", "true").lower() == "true"
 SETPOINT = float(os.getenv("SP", 7.5))
-DT = float(os.getenv("DT", 1))
-
-MODE = "AUTOTUNE"   # CHANGE THIS TO AUTOTUNE / ONOFF #DEPENDS ON THE MODE BUT MAKE SURE TO RUN EACH FOR ATLEAST 30-60 SECS
+DT = float(os.getenv("DT", 5))
 
 # ========================
-# LOAD SIMULATOR
+# REACTORS
 # ========================
-if SIM_MODE:
-    from simulator.tetraselmis_sim import TetraselmisSim
-    sim = TetraselmisSim(initial_ph=7.5)
-    print("=== RUNNING IN SIMULATION MODE ===\n")
-
-# ========================
-# LOGGING SETUP
-# ========================
-log_data = []
-start_time = time.time()
-total_iae = 0
+reactors = {
+    1: {"sim": TetraselmisSim(), "co2": 0, "mode": "AUTOTUNE", "iae": 0},
+    2: {"sim": TetraselmisSim(), "co2": 0, "mode": "IDLE", "iae": 0}
+}
 
 # ========================
 # AUTOTUNE PHASE
 # ========================
-if MODE == "AUTOTUNE":
-    autotune = RelayAutotune(setpoint=SETPOINT)
+autotune = RelayAutotune(setpoint=SETPOINT)
 
-    print("Starting Relay Autotuning...\n")
+insert_event(1, "SYSTEM", "Starting autotune", "Relay tuning", "adjusting")
 
-    co2 = 0
+while reactors[1]["mode"] == "AUTOTUNE":
+    ph, temp = reactors[1]["sim"].step(reactors[1]["co2"])
 
-    while True:
-        ph = sim.step(co2)
+    output = autotune.step(ph)
+    reactors[1]["co2"] = 1 if output < 0 else 0
 
-        print(f"[AUTOTUNE] pH: {ph:.3f}")
+    autotune.record(ph)
 
-        # Relay control
-        output = autotune.step(ph)
+    insert_event(1, "PH", "Autotuning in progress", "Oscillation", "adjusting")
 
-        # ✅ FIX: correct direction
-        co2 = 1 if output < 0 else 0
+    amp, per = autotune.get_params()
 
-        autotune.record(ph)
+    if amp and per:
+        pid_vals = autotune.compute_pid(amp, per)
 
-        amplitude, period = autotune.get_params()
+        if pid_vals:
+            Kp, Ki, Kd = pid_vals
 
-        if amplitude and period:
-            print(f"Amplitude: {amplitude:.3f}, Period: {period:.3f}")
+            # ✅ SAVE PID VALUES
+            insert_pid(1, Kp, Ki, Kd)
 
-            pid_values = autotune.compute_pid(amplitude, period)
+            insert_event(1, "SYSTEM", "Autotune complete", "PID parameters ready", "success")
 
-            if pid_values:
-                Kp, Ki, Kd = pid_values
+            # ✅ APPLY PID VALUES
+            reactors[1]["pid"] = PID(Kp, Ki, Kd, setpoint=SETPOINT)
 
-                print("\n=== AUTOTUNE COMPLETE ===")
-                print(f"Kp = {Kp:.4f}")
-                print(f"Ki = {Ki:.4f}")
-                print(f"Kd = {Kd:.4f}\n")
-                break
+            # ✅ RESET IAE
+            reactors[1]["iae"] = 0
+            reactors[2]["iae"] = 0
 
-        time.sleep(DT)
+            # ✅ START BOTH SYSTEMS
+            reactors[1]["mode"] = "PID"
+            reactors[2]["mode"] = "ONOFF"
 
-    pid = PID(Kp, Ki, Kd, setpoint=SETPOINT)
-    MODE = "PID"
+            insert_event(1, "SYSTEM", "Control started", "PID active", "running")
+            insert_event(2, "SYSTEM", "Control started", "ON/OFF active", "running")
+
+            break
+
+    time.sleep(DT)
 
 # ========================
-# MAIN CONTROL LOOP
+# MAIN LOOP
 # ========================
-print("Starting Main Control Loop...\n")
-
-co2 = 0
+start = time.time()
 
 try:
     while True:
-        current_time = time.time() - start_time
+        t = time.time() - start
 
-        ph = sim.step(co2)
+        for rid, r in reactors.items():
+            ph, temp = r["sim"].step(r["co2"])
 
-        error = abs(SETPOINT - ph)
-        total_iae += error
+            error = abs(SETPOINT - ph)
+            r["iae"] += error
 
-        # ========================
-        # CONTROL LOGIC
-        # ========================
-        if MODE == "PID":
-            output = pid.compute(ph)
+            if r["mode"] == "PID":
+                output = r["pid"].compute(ph)
+                r["co2"] = 1 if output < 0 else 0
 
-            # ✅ FIX: correct direction
-            co2 = 1 if output < 0 else 0
+                if ph > SETPOINT:
+                    insert_event(rid, "PH", "Above setpoint", "Inject CO2", "adjusting")
+                else:
+                    insert_event(rid, "PH", "Stable", "No action", "success")
 
-            # 🔍 DEBUG (you can remove later)
-            print(f"PID Output: {output:.4f}")
+            elif r["mode"] == "ONOFF":
+                action = onoff_control(ph, SETPOINT)
+                if action is not None:
+                    r["co2"] = action
 
-        elif MODE == "ONOFF":
-            action = onoff_control(ph, SETPOINT)
-            if action is not None:
-                co2 = action
+            elif r["mode"] == "IDLE":
+                continue
 
-        # ========================
-        # LOG DATA
-        # ========================
-        log_data.append({
-            "time": current_time,
-            "ph": ph,
-            "setpoint": SETPOINT,
-            "error": error,
-            "co2": co2,
-            "mode": MODE
-        })
+            # LOGGING
+            insert_reading(rid, t, ph, temp, r["co2"], r["mode"])
+            insert_iae(rid, r["iae"])
 
-        # ========================
-        # PRINT STATUS
-        # ========================
-        print(
-            f"Time: {current_time:.1f}s | "
-            f"pH: {ph:.3f} | "
-            f"Error: {error:.3f} | "
-            f"IAE: {total_iae:.4f} | "
-            f"CO2: {co2}"
-        )
+            print(f"[R{rid}] pH={ph:.3f} Temp={temp:.2f} CO2={r['co2']} Mode={r['mode']} IAE={r['iae']:.3f}")
 
         time.sleep(DT)
 
-# ========================
-# SAVE DATA ON EXIT
-# ========================
 except KeyboardInterrupt:
-    print("\nStopping simulation...")
+    print("\nStopping...")
 
-    df = pd.DataFrame(log_data)
+    for rid, r in reactors.items():
+        insert_summary(rid, r["iae"], r["mode"])
 
-    filename = f"{MODE.lower()}_log.csv"
-    df.to_csv(filename, index=False)
-
-    print(f"Data saved to {filename}")
-    print(f"Final IAE: {total_iae:.4f}")
+    print("Saved to database.")

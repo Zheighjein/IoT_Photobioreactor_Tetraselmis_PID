@@ -9,3 +9,8 @@ __pycache__/
 # ========================
 *.csv
 *.png
+
+# ========================
+# Database Results      #REMOVE THIS ONCE EVERYTHING'S DONE
+# ========================
+*.db

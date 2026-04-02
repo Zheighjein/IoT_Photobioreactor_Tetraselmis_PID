@@ -21,15 +21,10 @@ Run the environment in the terminal
 after the output you can press
 "Ctrl + C" to stop it
 
-you can plot the results using
-"python plot_results.py"
+both reactors work simultanously now.
 
-to switch between controllers in the simulation
-go to main.py
-
-MODE = "ONOFF"
-or
-MODE = "PID"
+EVALUATION METRICS: IAE
 
 
-remember to delete the csv files after simulation
+the pbr_sim.db won't be logged for now. If you try to push/commit it nothing will happen.
+Will turn this on again after final code

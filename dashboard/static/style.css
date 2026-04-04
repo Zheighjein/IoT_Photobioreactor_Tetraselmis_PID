@@ -1,0 +1,91 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap');
+
+* {
+    font-family: 'Inter', sans-serif;
+}
+
+body {
+    background-color: #f3f4f6;
+}
+
+/* Header Wave Design */
+.bg-wave {
+    background: linear-gradient(rgba(58, 95, 60, 0.6), rgba(58, 95, 60, 0.6)), 
+                url("/static/Phyto.jpg");
+    background-size: cover;
+    background-position: center;
+    clip-path: ellipse(150% 100% at 50% 0%);
+    position: relative;
+}
+
+/* Glassmorphism utility */
+.glass-card {
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(10px);
+}
+
+/* Nav transition */
+.nav-tab {
+    transition: all 0.3s ease;
+}
+
+.tab-content {
+    transition: opacity 0.3s ease;
+}
+
+.tab-content.hidden {
+    display: none;
+}
+
+/* Chart Container */
+.chart-container {
+    position: relative;
+    height: 200px;
+    margin-bottom: 1rem;
+}
+
+/* Algorithm Button Styling */
+.algo-btn {
+    transition: all 0.3s ease;
+}
+
+.algo-btn.active {
+    background-color: #3A5F3C;
+    color: white;
+}
+
+.algo-btn.inactive {
+    background-color: transparent;
+    color: #4b5563;
+}
+
+/* Status Badge */
+.status-badge {
+    display: inline-block;
+    padding: 0.35rem 1rem;
+    border-radius: 0.375rem;
+    font-size: 0.875rem;
+    font-weight: 700;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.status-stable {
+    background-color: #10b981;
+    color: white;
+}
+
+.status-adjusting {
+    background-color: #f59e0b;
+    color: white;
+}
+
+.status-alert {
+    background-color: #ef4444;
+    color: white;
+}
+
+/* NEW – shown when main.py is not running */
+.status-idle {
+    background-color: #6b7280;
+    color: white;
+}

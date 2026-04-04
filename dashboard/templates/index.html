@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>REYNA - Photobioreactor Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+
+<body class="text-gray-800 pb-12">
+
+    <!-- Navigation Bar -->
+    <nav class="bg-[#3A5F3C] text-white px-6 py-4 flex justify-between items-center sticky top-0 z-50 shadow-md">
+        <div class="flex space-x-8 font-medium">
+            <button onclick="switchTab('parameters')" class="nav-tab border-b-2 border-lime-400 pb-1 hover:opacity-80 transition" id="tab-parameters">
+                Parameters
+            </button>
+            <button onclick="switchTab('visualization')" class="nav-tab border-b-2 border-transparent pb-1 hover:border-lime-200 transition" id="tab-visualization">
+                Visualization
+            </button>
+            <button onclick="switchTab('status')" class="nav-tab border-b-2 border-transparent pb-1 hover:border-lime-200 transition" id="tab-status">
+                System Status
+            </button>
+        </div>
+        <div class="relative">
+            <i class="fas fa-bell text-xl cursor-pointer hover:opacity-80 transition"></i>
+            <span class="absolute -top-1 -right-1 bg-red-500 text-[10px] rounded-full px-1.5 py-0.5">2</span>
+        </div>
+    </nav>
+
+    <!-- Header -->
+    <header class="bg-wave text-white pt-12 pb-28 px-8 text-center">
+        <h1 class="text-5xl font-bold tracking-tight mb-2">REYNA</h1>
+        <p class="text-lg opacity-90 max-w-2xl mx-auto">
+            Web Dashboard for Comparative pH Control Analysis Using ON/OFF and PID Algorithms
+        </p>
+    </header>
+
+    <!-- Main Content -->
+    <main class="max-w-4xl mx-auto -mt-16 px-4 relative z-10">
+
+        <!-- Algorithm Toggle -->
+        <div class="flex justify-center mb-8">
+            <div class="bg-gray-200 p-1 rounded-full shadow-inner inline-flex border border-gray-300">
+                <button 
+                    onclick="setAlgorithm('ON/OFF')" 
+                    id="btn-onoff" 
+                    class="algo-btn active px-6 py-2 rounded-full font-semibold transition-all"
+                >
+                    ON/OFF CONTROL ALGORITHM
+                </button>
+                <button 
+                    onclick="setAlgorithm('PID')" 
+                    id="btn-pid" 
+                    class="algo-btn inactive px-6 py-2 rounded-full font-semibold transition-all"
+                >
+                    PID CONTROL ALGORITHM
+                </button>
+            </div>
+        </div>
+
+        <!-- PARAMETERS TAB -->
+        <section id="content-parameters" class="tab-content space-y-6">
+            <h2 id="reactor-title" class="text-center font-bold text-gray-500 uppercase tracking-widest mb-4">
+                Photobioreactor 1
+            </h2>
+
+            <!-- pH Section -->
+            <div class="bg-[#5c7c5e] text-white p-6 rounded-2xl shadow-xl">
+                <h3 class="text-lg font-semibold mb-4">pH Control</h3>
+                <div class="grid md:grid-cols-2 gap-6 mb-6">
+                    <!-- pH Chart -->
+                    <div class="bg-white rounded-xl p-4">
+                        <div class="chart-container">
+                            <canvas id="phChart"></canvas>
+                        </div>
+                        <p class="text-xs text-gray-600 text-center">pH Real-time Trend</p>
+                    </div>
+
+                    <!-- pH Data Panel -->
+                    <div class="flex flex-col justify-between">
+                        <div>
+                            <label class="text-xs uppercase font-bold opacity-80">Current pH Reading</label>
+                            <div id="val-ph" class="bg-white text-gray-800 text-3xl font-bold py-2 px-4 rounded-lg mt-1">
+                                8.3
+                            </div>
+                        </div>
+                        <div>
+                            <label class="text-xs uppercase font-bold opacity-80">Target Setpoint Range</label>
+                            <div id="ph-range" class="bg-white/20 border border-white/30 text-white text-xl font-bold py-2 px-4 rounded-lg mt-1">
+                                8.1 - 8.7
+                            </div>
+                        </div>
+                        <div>
+                            <label class="text-xs uppercase font-bold opacity-80 block mb-2">Status</label>
+                            <span id="status-ph" class="status-badge status-stable">STABLE</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Temperature Section -->
+            <div class="bg-[#5c7c5e] text-white p-6 rounded-2xl shadow-xl">
+                <h3 class="text-lg font-semibold mb-4">Temperature Control</h3>
+                <div class="space-y-6">
+                    <!-- Temperature Chart -->
+                    <div class="bg-white rounded-xl p-4">
+                        <div class="chart-container">
+                            <canvas id="tempChart"></canvas>
+                        </div>
+                        <p class="text-xs text-gray-600 text-center">Temperature Trend</p>
+                    </div>
+
+                    <!-- Temperature Data Panel -->
+                    <div class="grid md:grid-cols-2 gap-4">
+                        <div>
+                            <label class="text-xs uppercase font-bold opacity-80">Current Temp (°C)</label>
+                            <div id="val-temp" class="bg-white text-gray-800 text-3xl font-bold py-2 px-4 rounded-lg mt-1">
+                                27.8
+                            </div>
+                        </div>
+                        <div>
+                            <label class="text-xs uppercase font-bold opacity-80">Target Setpoint Range</label>
+                            <div id="temp-range" class="bg-white/20 border border-white/30 text-white text-xl font-bold py-2 px-4 rounded-lg mt-1">
+                                27 - 29
+                            </div>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="text-xs uppercase font-bold opacity-80 block mb-2">Status</label>
+                        <span id="status-temp" class="status-badge status-stable">STABLE</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- VISUALIZATION TAB -->
+        <section id="content-visualization" class="tab-content hidden space-y-6">
+            <h2 class="text-center font-bold text-gray-500 uppercase tracking-widest mb-6">
+                Comparative Analysis
+            </h2>
+
+            <!-- Toggle Controls -->
+            <div class="flex flex-wrap gap-4 justify-center mb-6">
+                <label class="flex items-center space-x-2 bg-white p-3 rounded-lg shadow">
+                    <input type="checkbox" id="show-ph-trend" checked onchange="updateComparisonChart()">
+                    <span class="text-sm font-medium text-gray-700">pH Trend</span>
+                </label>
+                <label class="flex items-center space-x-2 bg-white p-3 rounded-lg shadow">
+                    <input type="checkbox" id="show-temp-trend" checked onchange="updateComparisonChart()">
+                    <span class="text-sm font-medium text-gray-700">Temperature Trend</span>
+                </label>
+            </div>
+
+            <!-- Comparison Chart -->
+            <div class="bg-white p-6 rounded-2xl shadow-xl">
+                <h3 class="text-lg font-semibold text-gray-700 mb-4">Algorithm Comparison</h3>
+                <div class="chart-container" style="height: 300px;">
+                    <canvas id="comparisonChart"></canvas>
+                </div>
+            </div>
+
+            <!-- History Panel -->
+            <div class="bg-[#5c7c5e] text-white p-6 rounded-2xl shadow-xl">
+                <h3 class="text-lg font-semibold mb-4">Event History</h3>
+                <div class="space-y-3 max-h-80 overflow-y-auto">
+                    <div class="bg-white/10 p-3 rounded-lg border border-white/20">
+                        <div class="flex justify-between items-start">
+                            <div>
+                                <p class="font-semibold">pH Adjustment</p>
+                                <p class="text-xs opacity-80">Reactor 1 - ON/OFF</p>
+                            </div>
+                            <span class="status-badge status-stable">Success</span>
+                        </div>
+                        <p class="text-xs opacity-70 mt-2">Today, 14:32</p>
+                    </div>
+                    <div class="bg-white/10 p-3 rounded-lg border border-white/20">
+                        <div class="flex justify-between items-start">
+                            <div>
+                                <p class="font-semibold">Temperature Alert</p>
+                                <p class="text-xs opacity-80">Reactor 2 - PID</p>
+                            </div>
+                            <span class="status-badge status-adjusting">Adjusting</span>
+                        </div>
+                        <p class="text-xs opacity-70 mt-2">Today, 12:15</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- STATUS TAB -->
+        <section id="content-status" class="tab-content hidden space-y-6">
+            <h2 class="text-center font-bold text-gray-500 uppercase tracking-widest mb-6">
+                System Status
+            </h2>
+
+            <!-- Reactor 1 Status -->
+            <div class="bg-[#5c7c5e] text-white p-6 rounded-2xl shadow-xl">
+                <h3 class="text-lg font-semibold mb-4">Photobioreactor 1 (ON/OFF)</h3>
+                <div class="grid md:grid-cols-2 gap-6">
+                    <div>
+                        <p class="text-xs uppercase font-bold opacity-80 mb-2">System Status</p>
+                        <div class="flex items-center space-x-2">
+                            <span class="w-3 h-3 bg-green-500 rounded-full animate-pulse"></span>
+                            <span class="text-lg font-semibold">Online</span>
+                        </div>
+                    </div>
+                    <div>
+                        <p class="text-xs uppercase font-bold opacity-80 mb-2">Current pH</p>
+                        <p class="text-2xl font-bold">8.3</p>
+                    </div>
+                    <div>
+                        <p class="text-xs uppercase font-bold opacity-80 mb-2">Current Temp</p>
+                        <p class="text-2xl font-bold">27.8 °C</p>
+                    </div>
+                    <div>
+                        <p class="text-xs uppercase font-bold opacity-80 mb-2">Target Range (pH)</p>
+                        <p class="text-xl font-semibold">8.1 - 8.7</p>
+                    </div>
+                </div>
+                <div class="mt-4 pt-4 border-t border-white/20">
+                    <p class="text-xs uppercase font-bold opacity-80 mb-3">ON/OFF Details</p>
+                    <div class="grid md:grid-cols-2 gap-4 text-sm">
+                        <div><span class="opacity-80">Hysteresis Band:</span> ±0.3</div>
+                        <div><span class="opacity-80">Switch State:</span> Heating</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Reactor 2 Status -->
+            <div class="bg-[#5c7c5e] text-white p-6 rounded-2xl shadow-xl">
+                <h3 class="text-lg font-semibold mb-4">Photobioreactor 2 (PID)</h3>
+                <div class="grid md:grid-cols-2 gap-6">
+                    <div>
+                        <p class="text-xs uppercase font-bold opacity-80 mb-2">System Status</p>
+                        <div class="flex items-center space-x-2">
+                            <span class="w-3 h-3 bg-green-500 rounded-full animate-pulse"></span>
+                            <span class="text-lg font-semibold">Online</span>
+                        </div>
+                    </div>
+                    <div>
+                        <p class="text-xs uppercase font-bold opacity-80 mb-2">Current pH</p>
+                        <p class="text-2xl font-bold">7.8</p>
+                    </div>
+                    <div>
+                        <p class="text-xs uppercase font-bold opacity-80 mb-2">Current Temp</p>
+                        <p class="text-2xl font-bold">26.2 °C</p>
+                    </div>
+                    <div>
+                        <p class="text-xs uppercase font-bold opacity-80 mb-2">Target Range (pH)</p>
+                        <p class="text-xl font-semibold">7.5 - 8.0</p>
+                    </div>
+                </div>
+                <div class="mt-4 pt-4 border-t border-white/20">
+                    <p class="text-xs uppercase font-bold opacity-80 mb-3">PID Parameters</p>
+                    <div class="grid md:grid-cols-3 gap-4 text-sm">
+                        <div><span class="opacity-80">Kp:</span> 2.5</div>
+                        <div><span class="opacity-80">Ki:</span> 0.8</div>
+                        <div><span class="opacity-80">Kd:</span> 1.2</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <script src="/static/script.js"></script>
+</body>
+</html>

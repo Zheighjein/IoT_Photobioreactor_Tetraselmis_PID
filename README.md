@@ -17,6 +17,7 @@ install the environment
 
 Run the environment in the terminal
 "python main.py"
+"python dashboard/app.py"
 
 after the output you can press
 "Ctrl + C" to stop it
@@ -28,3 +29,9 @@ EVALUATION METRICS: IAE
 
 the pbr_sim.db won't be logged for now. If you try to push/commit it nothing will happen.
 Will turn this on again after final code
+
+
+____________________________________________________________________________________________________
+
+
+

@@ -17,6 +17,7 @@ install the environment
 
 Run the environment in the terminal
 "python main.py"
+Then run this in another terminal
 "python dashboard/app.py"
 
 after the output you can press

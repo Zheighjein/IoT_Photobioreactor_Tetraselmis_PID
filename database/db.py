@@ -65,7 +65,9 @@ def init_db():
     CREATE TABLE IF NOT EXISTS summary (
         id         INTEGER PRIMARY KEY AUTOINCREMENT,
         reactor_id INTEGER,
-        final_iae  REAL,
+        final_iae REAL,
+        final_ise REAL,
+        final_itae REAL,
         mode       TEXT,
         timestamp  REAL
     )
@@ -119,12 +121,14 @@ def insert_iae(rid, iae):
     conn.close()
 
 
-def insert_summary(rid, iae, mode):
+def insert_summary(rid, iae, ise, itae, mode):
     conn = connect()
     c = conn.cursor()
-    c.execute(
-        "INSERT INTO summary (reactor_id, final_iae, mode, timestamp) VALUES (?, ?, ?, ?)",
-        (rid, iae, mode, time.time())
-    )
+
+    c.execute("""
+    INSERT INTO summary (reactor_id, final_iae, final_ise, final_itae, mode, timestamp)
+    VALUES (?, ?, ?, ?, ?, ?)
+    """, (rid, iae, ise, itae, mode, time.time()))
+
     conn.commit()
     conn.close()

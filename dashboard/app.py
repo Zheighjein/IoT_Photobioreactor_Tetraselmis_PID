@@ -2,7 +2,7 @@ import os
 import sqlite3
 from flask import Flask, render_template, jsonify, request
 from dotenv import load_dotenv
-from datetime import datetime
+from datetime import datetime, timedelta
 
 load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))
 
@@ -46,6 +46,10 @@ def get_db_connection():
 def index():
     return render_template('index.html')
 
+@app.route('/notifications')
+def notifications_page():
+    return render_template('notification.html')
+
 
 @app.route('/api/data')
 def get_sensor_data():
@@ -85,7 +89,7 @@ def get_sensor_data():
                 'tempMin': config['tempMin'],
                 'tempMax': config['tempMax']
             },
-            'timestamp': row['time']
+            'timestamp': datetime.now().strftime('%I:%M:%S %p')
         })
 
     except Exception as e:
@@ -98,18 +102,23 @@ def get_history():
     try:
         conn         = get_db_connection()
         history_data = {}
+        now          = datetime.now()
 
         for algo, config in reactor_config.items():
             rows = conn.execute(
-                "SELECT ph, temp, time FROM readings WHERE reactor_id = ? ORDER BY time DESC LIMIT 20",
+                "SELECT ph, temp FROM readings WHERE reactor_id = ? ORDER BY rowid DESC LIMIT 8",
                 (config['reactor_id'],)
             ).fetchall()
             rows = list(reversed(rows))
+            count = len(rows)
 
             history_data[algo] = {
                 'ph':          [r['ph']   for r in rows],
                 'temperature': [r['temp'] for r in rows],
-                'timestamps':  [r['time'] for r in rows]
+                'timestamps':  [
+                    (now - timedelta(seconds=(count - 1 - i) * 5)).strftime('%I:%M:%S %p')
+                    for i in range(count)
+                ]
             }
 
         conn.close()
@@ -203,6 +212,66 @@ def get_logs():
 
     except Exception as e:
         print(f"Flask /api/logs error: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+@app.route('/api/notifications')
+def get_notifications():
+    try:
+        conn = get_db_connection()
+        rows = conn.execute(
+            "SELECT ph, temp, reactor_id, rowid FROM readings ORDER BY rowid DESC LIMIT 20"
+        ).fetchall()
+        conn.close()
+
+        grouped = {}
+        now = datetime.now()
+        date_label = now.strftime('%B %d, %Y')
+
+        rows = list(reversed(rows))  # oldest first
+        total = len(rows)
+
+        for i, row in enumerate(rows):
+            algo = 'PID' if row['reactor_id'] == 1 else 'ON/OFF'
+            config = reactor_config[algo]
+            ph = row['ph']
+            temp = row['temp']
+            row_time  = now - timedelta(seconds=i * 5)
+            timestamp = row_time.strftime('%B %d, %Y  %I:%M:%S %p')
+            time_only = row_time.strftime('%I:%M:%S %p')
+
+            if ph < config['phMin'] or ph > config['phMax']:
+                parameter = f"pH: {ph:.2f}"
+                issue = "Nearing beyond ideal parameters"
+                status = "ADJUSTING"
+            elif temp < config['tempMin'] or temp > config['tempMax']:
+                parameter = f"Temp: {temp:.1f}°C"
+                issue = "Temperature beyond ideal parameters"
+                status = "ADJUSTING"
+            else:
+                parameter = f"pH: {ph:.2f}, Temp: {temp:.1f}°C"
+                issue = "Parameters returned to ideal range"
+                status = "SUCCESS"
+
+            if date_label not in grouped:
+                grouped[date_label] = []
+
+            grouped[date_label].append({
+                'reactor': f"{algo} Control Algorithm",
+                'parameter': parameter,
+                'issue': issue,
+                'datetime': timestamp,
+                'time_only': time_only,
+                'status': status
+            })
+
+        return jsonify({
+            'status': 'success',
+            'notifications': grouped
+        })
+
+    except Exception as e:
+        print(f"Flask /api/notifications error: {e}")
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 

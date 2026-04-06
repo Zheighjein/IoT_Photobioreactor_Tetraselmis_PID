@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Activity Log - REYNA</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="stylesheet" href="/static/style.css">
+    <style>
+        body { background-color: #f0f7f0; }
+
+        .notif-card {
+            background: #b9deae;
+            border: 1px solid #c8dfc8;
+            border-radius: 1rem;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(58,95,60,0.07);
+        }
+
+        .notif-header {
+            background: #d4ebd4;
+            padding: 0.6rem 1.2rem;
+            font-size: 0.7rem;
+            font-weight: 700;
+            letter-spacing: 0.1em;
+            color: #3a5f3c;
+            text-transform: uppercase;
+            display: grid;
+            grid-template-columns: 1.4fr 2fr 1.6fr 0.8fr 1.8rem;
+            align-items: center;
+            border-bottom: 1px solid #b8d4b8;
+        }
+
+        .notif-row {
+            display: grid;
+            grid-template-columns: 1.4fr 2fr 1.6fr 0.8fr 1.8rem;
+            align-items: center;
+            padding: 0.75rem 1.2rem;
+            border-bottom: 1px solid #e8f3e8;
+            cursor: pointer;
+            transition: background 0.15s;
+            font-size: 0.85rem;
+            color: #374151;
+        }
+
+        .notif-row:last-child { border-bottom: none; }
+        .notif-row:hover { background: #eaf5ea; }
+
+        .notif-detail {
+            background: #f5fbf5;
+            border-bottom: 1px solid #d4ebd4;
+            padding: 1rem 1.5rem;
+            font-size: 0.82rem;
+            color: #4b5563;
+            display: none;
+        }
+
+        .notif-detail.open { display: block; }
+
+        .detail-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.5rem 2rem;
+        }
+
+        .detail-grid span { font-weight: 600; color: #3a5f3c; }
+
+        .badge {
+            display: inline-block;
+            padding: 0.2rem 0.65rem;
+            border-radius: 999px;
+            font-size: 0.7rem;
+            font-weight: 700;
+            letter-spacing: 0.05em;
+        }
+
+        .badge-success { background: #d1fae5; color: #065f46; }
+        .badge-adjusting { background: #fef3c7; color: #92400e; }
+
+        .chevron { transition: transform 0.2s; color: #6b9e6b; font-size: 0.75rem; }
+        .chevron.open { transform: rotate(180deg); }
+
+        .filter-btn {
+            padding: 0.45rem 1.4rem;
+            border-radius: 0.5rem;
+            font-size: 0.8rem;
+            font-weight: 600;
+            letter-spacing: 0.04em;
+            transition: all 0.2s;
+            cursor: pointer;
+            border: none;
+        }
+
+        .filter-btn.active { background: #3a5f3c; color: #fff; }
+        .filter-btn.inactive { background: transparent; color: #3a5f3c; }
+        .filter-btn.inactive:hover { background: #e0f0e0; }
+
+        .day-label {
+            font-size: 0.72rem;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            color: #5c7c5e;
+            text-transform: uppercase;
+            margin-bottom: 0.4rem;
+            padding-left: 0.2rem;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 3rem 1rem;
+            color: #9ca3af;
+        }
+
+        .empty-state i { font-size: 2.5rem; margin-bottom: 0.75rem; color: #c8dfc8; }
+    </style>
+</head>
+<body class="pb-16">
+
+    <!-- Nav -->
+    <nav class="bg-[#3A5F3C] text-white px-6 py-4 flex justify-between items-center sticky top-0 z-50 shadow-md">
+        <div class="flex space-x-8 font-medium text-sm">
+            <a href="/" class="hover:opacity-75 transition">Parameters</a>
+            <a href="/" class="hover:opacity-75 transition">Visualization</a>
+            <a href="/" class="hover:opacity-75 transition">System Status</a>
+        </div>
+        <a href="/notifications" class="relative">
+            <i class="fas fa-bell text-lg text-yellow-300"></i>
+        </a>
+    </nav>
+
+    <!-- Header -->
+    <header class="bg-wave text-white pt-12 pb-24 px-8 text-center">
+        <p id="today-date" class="text-xs font-semibold tracking-widest uppercase opacity-75 mb-1"></p>
+        <h1 class="text-4xl font-bold tracking-tight">Activity Log</h1>
+    </header>
+
+    <!-- Main -->
+    <main class="max-w-4xl mx-auto -mt-12 px-4 relative z-10">
+
+        <!-- Card wrapper -->
+        <div class="bg-white rounded-2xl shadow-lg border border-[#c8dfc8] p-6 md:p-8">
+
+            <!-- Reactor filter -->
+            <div class="flex justify-center mb-7">
+                <div class="bg-[#eaf5ea] p-1 rounded-lg border border-[#c8dfc8] inline-flex gap-1">
+                    <button id="filter-r1" class="filter-btn active">ON/OFF CONTROL ALGORITHM</button>
+                    <button id="filter-r2" class="filter-btn inactive">PID CONTROL ALGORITHM</button>
+                </div>
+            </div>
+
+            <!-- Notification list -->
+            <div id="notification-container" class="space-y-6"></div>
+
+        </div>
+    </main>
+
+    <script>
+        let selectedReactor = "ON/OFF Control Algorithm";
+
+        document.getElementById('filter-r1').addEventListener('click', () => {
+            selectedReactor = "ON/OFF Control Algorithm";
+            setActive('filter-r1', 'filter-r2');
+            loadNotifications();
+        });
+
+        document.getElementById('filter-r2').addEventListener('click', () => {
+            selectedReactor = "PID Control Algorithm";
+            setActive('filter-r2', 'filter-r1');
+            loadNotifications();
+        });
+
+        function setActive(a, b) {
+            document.getElementById(a).className = 'filter-btn active';
+            document.getElementById(b).className = 'filter-btn inactive';
+        }
+
+        function toggleDetail(id) {
+            const detail = document.getElementById('d-' + id);
+            const chevron = document.getElementById('c-' + id);
+            detail.classList.toggle('open');
+            chevron.classList.toggle('open');
+        }
+
+        async function loadNotifications() {
+            const container = document.getElementById('notification-container');
+            container.innerHTML = '<div class="empty-state"><i class="fas fa-spinner fa-spin"></i><p class="text-sm mt-2">Loading...</p></div>';
+
+            const res = await fetch('/api/notifications');
+            const json = await res.json();
+
+            container.innerHTML = '';
+
+            if (json.status !== 'success') {
+                container.innerHTML = '<div class="empty-state"><i class="fas fa-exclamation-circle"></i><p>Failed to load notifications.</p></div>';
+                return;
+            }
+
+            let hasAny = false;
+
+            for (const [day, items] of Object.entries(json.notifications)) {
+                const filtered = items.filter(item => item.reactor === selectedReactor);
+                if (!filtered.length) continue;
+                hasAny = true;
+
+                const section = document.createElement('div');
+
+                let html = `<p class="day-label"><i class="fas fa-calendar-alt mr-1"></i>${day}</p>
+                    <div class="notif-card">
+                        <div class="notif-header">
+                            <span>Parameter</span>
+                            <span>Issue</span>
+                            <span>Date / Time</span>
+                            <span>Status</span>
+                            <span></span>
+                        </div>`;
+
+                filtered.forEach((item, idx) => {
+                    const uid = `${day.replace(/\s/g,'-')}-${idx}`;
+                    const isSuccess = item.status === 'SUCCESS';
+                    const badge = isSuccess
+                        ? `<span class="badge badge-success">SUCCESS</span>`
+                        : `<span class="badge badge-adjusting">ADJUSTING</span>`;
+
+                    html += `
+                        <div class="notif-row" onclick="toggleDetail('${uid}')">
+                            <span>${item.parameter}</span>
+                            <span>${item.issue}</span>
+                            <span class="text-gray-500 text-xs">${item.datetime}</span>
+                            <span>${badge}</span>
+                            <span><i id="c-${uid}" class="fas fa-chevron-down chevron"></i></span>
+                        </div>
+                        <div id="d-${uid}" class="notif-detail">
+                            <div class="detail-grid">
+                                <div><span>Algorithm:</span> ${item.reactor}</div>
+                                <div><span>Status:</span> ${item.status}</div>
+                                <div><span>Parameter:</span> ${item.parameter}</div>
+                                <div><span>Issue:</span> ${item.issue}</div>
+                                <div class="col-span-2" style="grid-column:span 2"><span>Date / Time:</span> ${item.datetime}</div>
+                            </div>
+                        </div>`;
+                });
+
+                html += `</div>`;
+                section.innerHTML = html;
+                container.appendChild(section);
+            }
+
+            if (!hasAny) {
+                container.innerHTML = `<div class="empty-state">
+                    <i class="fas fa-bell-slash"></i>
+                    <p class="font-medium">No activity yet for ${selectedReactor}</p>
+                    <p class="text-xs mt-1">Start the simulation to see logs here.</p>
+                </div>`;
+            }
+        }
+
+        loadNotifications();
+    </script>
+</body>
+</html>

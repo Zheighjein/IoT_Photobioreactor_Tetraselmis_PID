@@ -11,11 +11,13 @@ let pollInterval = null;
 // Local ring-buffer for chart history (filled from /api/history on load,
 // then updated with each /api/data poll so we never need to re-fetch all 20 rows).
 const dataStore = {
-    'ON/OFF': { ph: [], temp: [], timestamps: [] },
-    'PID':    { ph: [], temp: [], timestamps: [] }
+    'ON/OFF': { ph: [], temp: [], timestamps_ph: [], timestamps_temp: [], timestamps: [] },
+    'PID':    { ph: [], temp: [], timestamps_ph: [], timestamps_temp: [], timestamps: [] }
 };
 
-const MAX_POINTS = 20;
+const MAX_POINTS_PH   = 4;
+const MAX_POINTS_TEMP = 8;
+const MAX_POINTS = 8;
 
 // ==================== API HELPERS ====================
 async function fetchCurrentData(algo) {
@@ -42,10 +44,10 @@ async function fetchStatus() {
 function pushPoint(store, ph, temp, ts) {
     store.ph.push(ph);
     store.temp.push(temp);
-    store.timestamps.push(ts);
-    if (store.ph.length > MAX_POINTS)        { store.ph.shift(); }
-    if (store.temp.length > MAX_POINTS)      { store.temp.shift(); }
-    if (store.timestamps.length > MAX_POINTS){ store.timestamps.shift(); }
+    store.timestamps_ph.push(ts);
+    store.timestamps_temp.push(ts);
+    if (store.ph.length > MAX_POINTS_PH)            { store.ph.shift(); store.timestamps_ph.shift(); }
+    if (store.temp.length > MAX_POINTS_TEMP)         { store.temp.shift(); store.timestamps_temp.shift(); }
 }
 
 // ==================== UI UPDATES ====================
@@ -84,8 +86,8 @@ async function pollData() {
             return;
         }
 
-        const { ph, temperature, config } = json;
-        const ts = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+        const { ph, temperature, config, timestamp } = json;
+        const ts = timestamp;
 
         // Update ring-buffer for the active algo
         pushPoint(dataStore[currentAlgorithm], ph, temperature, ts);
@@ -148,7 +150,7 @@ const chartDefaults = {
     plugins: { legend: { display: false } },
     scales: {
         y: { beginAtZero: false },
-        x: { ticks: { maxRotation: 0 } }
+        x: { ticks: { maxRotation: 0, maxTicksLimit: 5 } }
     }
 };
 
@@ -171,7 +173,10 @@ function initializeCharts() {
         },
         options: {
             ...chartDefaults,
-            scales: { ...chartDefaults.scales, y: { min: 6.5, max: 9, title: { display: true, text: 'pH' } } }
+            scales: {
+                y: { min: 6.5, max: 9, title: { display: true, text: 'pH' } },
+                x: { ticks: { maxRotation: 0, autoSkip: false } }
+            }
         }
     });
 
@@ -193,7 +198,10 @@ function initializeCharts() {
         },
         options: {
             ...chartDefaults,
-            scales: { ...chartDefaults.scales, y: { min: 24, max: 30 } }
+            scales: {
+                y: { min: 24, max: 30 },
+                x: { ticks: { maxRotation: 0, autoSkip: false } }
+            }
         }
     });
 
@@ -234,13 +242,13 @@ function updateCharts() {
     const store = dataStore[currentAlgorithm];
 
     if (phChart) {
-        phChart.data.labels               = store.timestamps;
-        phChart.data.datasets[0].data     = store.ph;
+        phChart.data.labels           = store.timestamps_ph;
+        phChart.data.datasets[0].data = store.ph;
         phChart.update('none');
     }
     if (tempChart) {
-        tempChart.data.labels             = store.timestamps;
-        tempChart.data.datasets[0].data   = store.temp;
+        tempChart.data.labels           = store.timestamps_temp;
+        tempChart.data.datasets[0].data = store.temp;
         tempChart.update('none');
     }
 }
@@ -379,7 +387,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         console.warn('History pre-fill failed (simulation may not have started yet):', e);
     }
 
-    // First poll immediately, then every 2 seconds
+    // First poll immediately, then every 5 seconds (matches DT=5 in .env)
     await pollData();
-    pollInterval = setInterval(pollData, 2000);
+    pollInterval = setInterval(pollData, 5000);
 });

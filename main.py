@@ -82,6 +82,7 @@ start = time.time()
 try:
     while True:
         t = time.time() - start
+        now = time.time()
 
         for rid, r in reactors.items():
             ph, temp = r["sim"].step(r["co2"])
@@ -112,7 +113,7 @@ try:
                 continue
 
             # LOGGING
-            insert_reading(rid, t, ph, temp, r["co2"], r["mode"])
+            insert_reading(rid, now, ph, temp, r["co2"], r["mode"])
             insert_iae(rid, r["iae"])
 
             print(

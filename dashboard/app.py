@@ -1,8 +1,9 @@
 import os
 import sqlite3
+import time
 from flask import Flask, render_template, jsonify, request
 from dotenv import load_dotenv
-from datetime import datetime, timedelta
+from datetime import datetime
 
 load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))
 
@@ -20,16 +21,16 @@ reactor_config = {
     'PID': {
         'name':      'Photobioreactor 1',
         'reactor_id': 1,
-        'phMin':  7.5,
-        'phMax':  8.0,
+        'phMin':  7.4,
+        'phMax':  7.6,
         'tempMin': 25,
         'tempMax': 28
     },
     'ON/OFF': {
         'name':      'Photobioreactor 2',
         'reactor_id': 2,
-        'phMin':  8.1,
-        'phMax':  8.7,
+        'phMin':  7.4,
+        'phMax':  7.6,
         'tempMin': 27,
         'tempMax': 29
     }
@@ -64,7 +65,7 @@ def get_sensor_data():
     try:
         conn = get_db_connection()
         row  = conn.execute(
-            "SELECT ph, temp, time FROM readings WHERE reactor_id = ? ORDER BY time DESC LIMIT 1",
+            "SELECT ph, temp, time FROM readings WHERE reactor_id = ? ORDER BY rowid DESC LIMIT 1",
             (reactor_id,)
         ).fetchone()
         conn.close()
@@ -102,23 +103,26 @@ def get_history():
     try:
         conn         = get_db_connection()
         history_data = {}
-        now          = datetime.now()
 
         for algo, config in reactor_config.items():
             rows = conn.execute(
-                "SELECT ph, temp FROM readings WHERE reactor_id = ? ORDER BY rowid DESC LIMIT 8",
+                "SELECT ph, temp, time FROM readings WHERE reactor_id = ? ORDER BY rowid DESC LIMIT 8",
                 (config['reactor_id'],)
             ).fetchall()
             rows = list(reversed(rows))
-            count = len(rows)
+
+            if rows:
+                timestamps = [
+                    datetime.fromtimestamp(r['time']).strftime('%I:%M:%S %p')
+                    for r in rows
+                ]
+            else:
+                timestamps = []
 
             history_data[algo] = {
                 'ph':          [r['ph']   for r in rows],
                 'temperature': [r['temp'] for r in rows],
-                'timestamps':  [
-                    (now - timedelta(seconds=(count - 1 - i) * 5)).strftime('%I:%M:%S %p')
-                    for i in range(count)
-                ]
+                'timestamps':  timestamps
             }
 
         conn.close()
@@ -137,7 +141,7 @@ def get_status():
 
         for algo, config in reactor_config.items():
             row = conn.execute(
-                "SELECT ph, temp, time FROM readings WHERE reactor_id = ? ORDER BY time DESC LIMIT 1",
+                "SELECT ph, temp, co2, time FROM readings WHERE reactor_id = ? ORDER BY rowid DESC LIMIT 1",
                 (config['reactor_id'],)
             ).fetchone()
 
@@ -159,6 +163,7 @@ def get_status():
                     'online':           True,
                     'ph':               row['ph'],
                     'temperature':      row['temp'],
+                    'co2':              row['co2'],
                     'config':           config,
                     'algorithm_params': algo_params,
                     'timestamp':        row['time']
@@ -170,7 +175,8 @@ def get_status():
         return jsonify({
             'status':    'success',
             'reactors':  reactors,
-            'timestamp': datetime.now().isoformat()
+            'timestamp': datetime.now().isoformat(),
+            'server_time': time.time()
         })
 
     except Exception as e:
@@ -183,22 +189,19 @@ def get_logs():
     try:
         conn = get_db_connection()
         rows = conn.execute(
-            "SELECT ph, temp, reactor_id, time FROM readings ORDER BY time DESC LIMIT 10"
+            "SELECT ph, temp, co2, reactor_id, time FROM readings ORDER BY time DESC LIMIT 10"
         ).fetchall()
         conn.close()
 
         logs = []
         for row in rows:
             algo   = 'PID' if row['reactor_id'] == 1 else 'ON/OFF'
-            config = reactor_config[algo]
             ph, temp = row['ph'], row['temp']
 
-            if ph < config['phMin'] or ph > config['phMax']:
-                param, desc, st = 'pH', f"pH out of range: {ph:.2f}", 'Adjusting'
-            elif temp < config['tempMin'] or temp > config['tempMax']:
-                param, desc, st = 'Temperature', f"Temp out of range: {temp:.1f}°C", 'Adjusting'
+            if row['co2'] == 1:
+                param, desc, st = 'pH', f"CO2 injecting — pH: {ph:.2f}", 'Adjusting'
             else:
-                param, desc, st = 'Status', 'Parameters stable', 'Success'
+                param, desc, st = 'Status', f"Valve closed — pH: {ph:.2f}", 'Success'
 
             logs.append({
                 'parameter':   param,
@@ -220,7 +223,7 @@ def get_notifications():
     try:
         conn = get_db_connection()
         rows = conn.execute(
-            "SELECT ph, temp, reactor_id, rowid FROM readings ORDER BY rowid DESC LIMIT 20"
+            "SELECT ph, temp, co2, reactor_id, time, rowid FROM readings ORDER BY rowid DESC LIMIT 20"
         ).fetchall()
         conn.close()
 
@@ -229,28 +232,21 @@ def get_notifications():
         date_label = now.strftime('%B %d, %Y')
 
         rows = list(reversed(rows))  # oldest first
-        total = len(rows)
 
-        for i, row in enumerate(rows):
+        for row in rows:
             algo = 'PID' if row['reactor_id'] == 1 else 'ON/OFF'
-            config = reactor_config[algo]
             ph = row['ph']
             temp = row['temp']
-            row_time  = now - timedelta(seconds=i * 5)
-            timestamp = row_time.strftime('%B %d, %Y  %I:%M:%S %p')
-            time_only = row_time.strftime('%I:%M:%S %p')
+            timestamp = datetime.fromtimestamp(row['time']).strftime('%B %d, %Y  %I:%M:%S %p')
+            time_only = datetime.fromtimestamp(row['time']).strftime('%I:%M:%S %p')
 
-            if ph < config['phMin'] or ph > config['phMax']:
+            if row['co2'] == 1:
                 parameter = f"pH: {ph:.2f}"
-                issue = "Nearing beyond ideal parameters"
-                status = "ADJUSTING"
-            elif temp < config['tempMin'] or temp > config['tempMax']:
-                parameter = f"Temp: {temp:.1f}°C"
-                issue = "Temperature beyond ideal parameters"
+                issue = "CO2 injecting — valve open"
                 status = "ADJUSTING"
             else:
                 parameter = f"pH: {ph:.2f}, Temp: {temp:.1f}°C"
-                issue = "Parameters returned to ideal range"
+                issue = "Valve closed — system stable"
                 status = "SUCCESS"
 
             if date_label not in grouped:
@@ -275,5 +271,30 @@ def get_notifications():
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 
-if __name__ == '__main__':
+@app.route('/api/metrics')
+def get_metrics():
+    try:
+        conn = get_db_connection()
+        metrics = {}
+
+        for algo, config in reactor_config.items():
+            row = conn.execute(
+                "SELECT final_iae, final_ise, final_itae FROM summary WHERE reactor_id = ? ORDER BY rowid DESC LIMIT 1",
+                (config['reactor_id'],)
+            ).fetchone()
+
+            metrics[algo] = {
+                'iae':  round(row['final_iae'],  4) if row else None,
+                'ise':  round(row['final_ise'],  4) if row else None,
+                'itae': round(row['final_itae'], 4) if row else None
+            }
+
+        conn.close()
+        return jsonify({'status': 'success', 'metrics': metrics})
+
+    except Exception as e:
+        print(f"Flask /api/metrics error: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+if __name__ == "__main__":
     app.run(host='0.0.0.0', port=5000, debug=True)

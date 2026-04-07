@@ -1,37 +1,21 @@
 // ==================== CONFIG ====================
 const reactorConfig = {
-    'ON/OFF': { name: 'Photobioreactor 2', phMin: 8.1, phMax: 8.7, tempMin: 27, tempMax: 29 },
-    'PID':    { name: 'Photobioreactor 1', phMin: 7.5, phMax: 8.0, tempMin: 25, tempMax: 28 }
+    'ON/OFF': { name: 'Photobioreactor 2', phMin: 7.4, phMax: 7.6, tempMin: 27, tempMax: 29 },
+    'PID':    { name: 'Photobioreactor 1', phMin: 7.4, phMax: 7.6, tempMin: 25, tempMax: 28 }
 };
 
 let currentAlgorithm = 'ON/OFF';
-let phChart, tempChart, comparisonChart;
+let phChart, tempChart, comparisonPhChart, comparisonTempChart, metricsChart;
 let pollInterval = null;
-
-// Local ring-buffer for chart history (filled from /api/history on load,
-// then updated with each /api/data poll so we never need to re-fetch all 20 rows).
-const dataStore = {
-    'ON/OFF': { ph: [], temp: [], timestamps_ph: [], timestamps_temp: [], timestamps: [] },
-    'PID':    { ph: [], temp: [], timestamps_ph: [], timestamps_temp: [], timestamps: [] }
-};
+let latestStatus = null;
+let systemActive = false;
 
 const MAX_POINTS_PH   = 4;
 const MAX_POINTS_TEMP = 8;
-const MAX_POINTS = 8;
 
 // ==================== API HELPERS ====================
-async function fetchCurrentData(algo) {
-    const res = await fetch(`/api/data?algorithm=${encodeURIComponent(algo)}`);
-    return res.json();   // caller checks .status
-}
-
 async function fetchHistory() {
     const res = await fetch('/api/history');
-    return res.json();
-}
-
-async function fetchLogs() {
-    const res = await fetch('/api/logs');
     return res.json();
 }
 
@@ -40,14 +24,14 @@ async function fetchStatus() {
     return res.json();
 }
 
-// ==================== RING-BUFFER HELPER ====================
-function pushPoint(store, ph, temp, ts) {
-    store.ph.push(ph);
-    store.temp.push(temp);
-    store.timestamps_ph.push(ts);
-    store.timestamps_temp.push(ts);
-    if (store.ph.length > MAX_POINTS_PH)            { store.ph.shift(); store.timestamps_ph.shift(); }
-    if (store.temp.length > MAX_POINTS_TEMP)         { store.temp.shift(); store.timestamps_temp.shift(); }
+async function fetchLogs() {
+    const res = await fetch('/api/logs');
+    return res.json();
+}
+
+async function fetchMetrics() {
+    const res = await fetch('/api/metrics');
+    return res.json();
 }
 
 // ==================== UI UPDATES ====================
@@ -76,41 +60,100 @@ function updateStatus(param, val, min, max) {
     }
 }
 
+function checkFreshness(statusJson) {
+    if (!statusJson || statusJson.status !== 'success') return false;
+    const serverTime = statusJson.server_time;
+    for (const [algo, data] of Object.entries(statusJson.reactors)) {
+        if (data.online && data.timestamp) {
+            const age = (serverTime - data.timestamp) * 1000;
+            if (age < 10000) return true;
+        }
+    }
+    return false;
+}
+
+function renderLiveParameters(statusJson) {
+    if (!statusJson || statusJson.status !== 'success') {
+        setIdle();
+        return;
+    }
+
+    const reactorData = statusJson.reactors[currentAlgorithm];
+    const config = reactorData?.config || reactorConfig[currentAlgorithm];
+    const serverTime = statusJson.server_time;
+    const isFresh = reactorData?.online && reactorData?.timestamp &&
+                    ((serverTime - reactorData.timestamp) * 1000) < 10000;
+
+    if (!reactorData || !isFresh) {
+        setIdle();
+        return;
+    }
+
+    const ph = reactorData.ph;
+    const temperature = reactorData.temperature;
+    const isAdjusting = reactorData.co2 === 1;
+
+    document.getElementById('val-ph').innerText   = ph.toFixed(2);
+    document.getElementById('val-temp').innerText = temperature.toFixed(1);
+    setStatusBadge('ph',   isAdjusting ? 'ADJUSTING' : 'STABLE', isAdjusting ? 'status-adjusting' : 'status-stable');
+    updateStatus('temp', temperature, config.tempMin, config.tempMax);
+}
+
+function renderSystemStatus(statusJson) {
+    if (!statusJson || statusJson.status !== 'success') return;
+
+    const serverTime = statusJson.server_time;
+    for (const [algo, data] of Object.entries(statusJson.reactors)) {
+        const suffix = algo === 'ON/OFF' ? 'onoff' : 'pid';
+
+        const onlineEl = document.getElementById(`status-online-${suffix}`);
+        const phEl     = document.getElementById(`status-ph-val-${suffix}`);
+        const tempEl   = document.getElementById(`status-temp-val-${suffix}`);
+
+        const isFresh = data.online && data.timestamp && ((serverTime - data.timestamp) * 1000) < 10000;
+        const onlineText = isFresh ? 'Online' : 'Offline';
+
+        if (onlineEl) onlineEl.innerText = onlineText;
+        if (phEl)     phEl.innerText     = isFresh ? data.ph.toFixed(2)                  : '—';
+        if (tempEl)   tempEl.innerText   = isFresh ? `${data.temperature.toFixed(1)} °C` : '—';
+
+        if (algo === 'PID' && data.algorithm_params) {
+            const kpEl = document.getElementById('status-kp');
+            const kiEl = document.getElementById('status-ki');
+            const kdEl = document.getElementById('status-kd');
+            if (kpEl) kpEl.innerText = typeof data.algorithm_params.kp === 'number' ? data.algorithm_params.kp.toFixed(4) : data.algorithm_params.kp;
+            if (kiEl) kiEl.innerText = typeof data.algorithm_params.ki === 'number' ? data.algorithm_params.ki.toFixed(4) : data.algorithm_params.ki;
+            if (kdEl) kdEl.innerText = typeof data.algorithm_params.kd === 'number' ? data.algorithm_params.kd.toFixed(4) : data.algorithm_params.kd;
+        }
+    }
+}
+
 // ==================== MAIN POLL ====================
+// Each poll fetches /api/history for all chart data (real DB values + real timestamps)
+// and /api/status for the live display and system status.
 async function pollData() {
     try {
-        const json = await fetchCurrentData(currentAlgorithm);
+        const statusJson = await fetchStatus();
+        latestStatus = statusJson;
+        systemActive = checkFreshness(statusJson);
 
-        if (json.status === 'idle' || json.status === 'error') {
-            setIdle();
-            return;
+        // Update inactive overlay
+        const overlay = document.getElementById('inactive-overlay');
+        if (overlay) {
+            overlay.classList.toggle('hidden', systemActive);
         }
 
-        const { ph, temperature, config, timestamp } = json;
-        const ts = timestamp;
+        if (statusJson.status !== 'success') {
+            setIdle();
+        } else {
+            renderLiveParameters(statusJson);
+            renderSystemStatus(statusJson);
+        }
 
-        // Update ring-buffer for the active algo
-        pushPoint(dataStore[currentAlgorithm], ph, temperature, ts);
-
-        // Update displayed values
-        document.getElementById('val-ph').innerText   = ph.toFixed(2);
-        document.getElementById('val-temp').innerText = temperature.toFixed(1);
-
-        // Update status badges using server-supplied config ranges
-        updateStatus('ph',   ph,          config.phMin,   config.phMax);
-        updateStatus('temp', temperature, config.tempMin, config.tempMax);
-
-        // Refresh charts
-        updateCharts();
-
-        // Also silently fetch the other algo's latest point so comparison chart stays fresh
-        const otherAlgo = currentAlgorithm === 'ON/OFF' ? 'PID' : 'ON/OFF';
-        fetchCurrentData(otherAlgo).then(other => {
-            if (other.status === 'success') {
-                pushPoint(dataStore[otherAlgo], other.ph, other.temperature, ts);
-                updateComparisonChart();
-            }
-        });
+        const hist = await fetchHistory();
+        if (hist.status === 'success') {
+            updateChartsFromHistory(hist.data);
+        }
 
     } catch (err) {
         console.warn('Poll error (Flask may be starting):', err);
@@ -118,11 +161,36 @@ async function pollData() {
     }
 }
 
+// ==================== CHART DATA FROM HISTORY ====================
+function updateChartsFromHistory(data) {
+    if (!systemActive) return;
+
+    const store = data[currentAlgorithm];
+    if (!store) return;
+
+    const phData   = store.ph.slice(-MAX_POINTS_PH);
+    const tempData = store.temperature.slice(-MAX_POINTS_TEMP);
+    const phTs     = store.timestamps.slice(-MAX_POINTS_PH);
+    const tempTs   = store.timestamps.slice(-MAX_POINTS_TEMP);
+
+    if (phChart) {
+        phChart.data.labels           = phTs;
+        phChart.data.datasets[0].data = phData;
+        phChart.update('none');
+    }
+    if (tempChart) {
+        tempChart.data.labels           = tempTs;
+        tempChart.data.datasets[0].data = tempData;
+        tempChart.update('none');
+    }
+
+    updateComparisonChartFromHistory(data);
+}
+
 // ==================== ALGORITHM SWITCH ====================
 function setAlgorithm(algo) {
     currentAlgorithm = algo;
 
-    // Button styles
     const btnOnOff = document.getElementById('btn-onoff');
     const btnPid   = document.getElementById('btn-pid');
     if (algo === 'ON/OFF') {
@@ -133,13 +201,11 @@ function setAlgorithm(algo) {
         btnOnOff.classList.remove('active'); btnOnOff.classList.add('inactive');
     }
 
-    // Labels
     const config = reactorConfig[algo];
     document.getElementById('reactor-title').innerText = config.name;
     document.getElementById('ph-range').innerText      = `${config.phMin} - ${config.phMax}`;
     document.getElementById('temp-range').innerText    = `${config.tempMin} - ${config.tempMax}`;
 
-    // Immediately pull the latest reading for the newly selected reactor
     pollData();
 }
 
@@ -155,7 +221,6 @@ const chartDefaults = {
 };
 
 function initializeCharts() {
-    // pH Chart
     const phCtx = document.getElementById('phChart').getContext('2d');
     phChart = new Chart(phCtx, {
         type: 'line',
@@ -180,7 +245,6 @@ function initializeCharts() {
         }
     });
 
-    // Temperature Chart
     const tempCtx = document.getElementById('tempChart').getContext('2d');
     tempChart = new Chart(tempCtx, {
         type: 'line',
@@ -199,84 +263,117 @@ function initializeCharts() {
         options: {
             ...chartDefaults,
             scales: {
-                y: { min: 24, max: 30 },
+                y: { min: 20, max: 30 },
                 x: { ticks: { maxRotation: 0, autoSkip: false } }
             }
         }
     });
 
-    // Comparison Chart
-    const compCtx = document.getElementById('comparisonChart').getContext('2d');
-    comparisonChart = new Chart(compCtx, {
+    const metricsCtx = document.getElementById('metricsChart').getContext('2d');
+    metricsChart = new Chart(metricsCtx, {
+        type: 'bar',
+        data: {
+            labels: ['IAE', 'ISE', 'ITAE'],
+            datasets: [
+                { label: 'PID (R1)',    data: [null, null, null], backgroundColor: 'rgba(99,102,241,0.7)',  borderColor: '#6366f1', borderWidth: 1 },
+                { label: 'ON/OFF (R2)', data: [null, null, null], backgroundColor: 'rgba(58,95,60,0.7)',   borderColor: '#3A5F3C', borderWidth: 1 }
+            ]
+        },
+        options: {
+            indexAxis: 'y',
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { position: 'top' } },
+            scales: { x: { beginAtZero: true } }
+        }
+    });
+
+    const compPhCtx = document.getElementById('comparisonPhChart').getContext('2d');
+    comparisonPhChart = new Chart(compPhCtx, {
         type: 'line',
         data: {
             labels: [],
             datasets: [
-                {
-                    label: 'ON/OFF pH',
-                    data: [],
-                    borderColor: '#3A5F3C',
-                    backgroundColor: 'rgba(58, 95, 60, 0.05)',
-                    tension: 0.3,
-                    borderWidth: 2
-                },
-                {
-                    label: 'PID pH',
-                    data: [],
-                    borderColor: '#6366f1',
-                    backgroundColor: 'rgba(99, 102, 241, 0.05)',
-                    tension: 0.3,
-                    borderWidth: 2
-                }
+                { label: 'PID (R1)',   data: [], borderColor: '#6366f1', backgroundColor: 'rgba(99,102,241,0.05)', tension: 0.3, borderWidth: 2, pointRadius: 3 },
+                { label: 'ON/OFF (R2)', data: [], borderColor: '#3A5F3C', backgroundColor: 'rgba(58,95,60,0.05)',  tension: 0.3, borderWidth: 2, pointRadius: 3 }
             ]
         },
         options: {
             ...chartDefaults,
-            plugins: { legend: { display: true, position: 'top' } },
-            scales: { ...chartDefaults.scales, y: { min: 7, max: 8.5 } }
+            plugins: { legend: { display: false } },
+            scales: {
+                y: { min: 6.5, max: 9, title: { display: true, text: 'pH' } },
+                x: { ticks: { maxRotation: 0, maxTicksLimit: 6 } }
+            }
+        }
+    });
+
+    const compTempCtx = document.getElementById('comparisonTempChart').getContext('2d');
+    comparisonTempChart = new Chart(compTempCtx, {
+        type: 'line',
+        data: {
+            labels: [],
+            datasets: [
+                { label: 'PID (R1)',   data: [], borderColor: '#6366f1', backgroundColor: 'rgba(99,102,241,0.05)', tension: 0.3, borderWidth: 2, pointRadius: 3 },
+                { label: 'ON/OFF (R2)', data: [], borderColor: '#3A5F3C', backgroundColor: 'rgba(58,95,60,0.05)',  tension: 0.3, borderWidth: 2, pointRadius: 3 }
+            ]
+        },
+        options: {
+            ...chartDefaults,
+            plugins: { legend: { display: false } },
+            scales: {
+                y: { min: 20, max: 30, title: { display: true, text: '°C' } },
+                x: { ticks: { maxRotation: 0, maxTicksLimit: 6 } }
+            }
         }
     });
 }
 
-function updateCharts() {
-    const store = dataStore[currentAlgorithm];
+function updateComparisonChartFromHistory(data) {
+    if (!comparisonPhChart || !comparisonTempChart) return;
 
-    if (phChart) {
-        phChart.data.labels           = store.timestamps_ph;
-        phChart.data.datasets[0].data = store.ph;
-        phChart.update('none');
-    }
-    if (tempChart) {
-        tempChart.data.labels           = store.timestamps_temp;
-        tempChart.data.datasets[0].data = store.temp;
-        tempChart.update('none');
-    }
+    const pid   = data['PID']    || { ph: [], temperature: [], timestamps: [] };
+    const onoff = data['ON/OFF'] || { ph: [], temperature: [], timestamps: [] };
+
+    const labels = pid.timestamps.length >= onoff.timestamps.length
+        ? pid.timestamps
+        : onoff.timestamps;
+
+    comparisonPhChart.data.labels            = labels;
+    comparisonPhChart.data.datasets[0].data  = pid.ph;
+    comparisonPhChart.data.datasets[1].data  = onoff.ph;
+    comparisonPhChart.update('none');
+
+    comparisonTempChart.data.labels            = labels;
+    comparisonTempChart.data.datasets[0].data  = pid.temperature;
+    comparisonTempChart.data.datasets[1].data  = onoff.temperature;
+    comparisonTempChart.update('none');
 }
 
-function updateComparisonChart() {
-    const showPh   = document.getElementById('show-ph-trend').checked;
-    const showTemp = document.getElementById('show-temp-trend').checked;
+// ==================== METRICS ====================
+async function refreshMetrics() {
+    try {
+        const json = await fetchMetrics();
+        if (json.status !== 'success') return;
 
-    if (!comparisonChart) return;
+        const pid   = json.metrics['PID']    || {};
+        const onoff = json.metrics['ON/OFF'] || {};
 
-    // Use longer of the two timestamp arrays as labels
-    const labels = dataStore['ON/OFF'].timestamps.length >= dataStore['PID'].timestamps.length
-        ? dataStore['ON/OFF'].timestamps
-        : dataStore['PID'].timestamps;
+        document.getElementById('pid-iae').innerText    = pid.iae   ?? '—';
+        document.getElementById('pid-ise').innerText    = pid.ise   ?? '—';
+        document.getElementById('pid-itae').innerText   = pid.itae  ?? '—';
+        document.getElementById('onoff-iae').innerText  = onoff.iae  ?? '—';
+        document.getElementById('onoff-ise').innerText  = onoff.ise  ?? '—';
+        document.getElementById('onoff-itae').innerText = onoff.itae ?? '—';
 
-    comparisonChart.data.labels = labels;
-
-    // Dataset 0 → ON/OFF pH or temp
-    comparisonChart.data.datasets[0].data   = showPh ? dataStore['ON/OFF'].ph   : dataStore['ON/OFF'].temp;
-    comparisonChart.data.datasets[0].label  = showPh ? 'ON/OFF pH' : 'ON/OFF Temp';
-    comparisonChart.data.datasets[0].hidden = false;
-
-    // Dataset 1 → PID pH or temp
-    comparisonChart.data.datasets[1].data   = showPh ? dataStore['PID'].ph   : dataStore['PID'].temp;
-    comparisonChart.data.datasets[1].label  = showPh ? 'PID pH' : 'PID Temp';
-    comparisonChart.data.datasets[1].hidden = false;
-
-    comparisonChart.update();
+        if (metricsChart) {
+            metricsChart.data.datasets[0].data = [pid.iae ?? 0,   pid.ise ?? 0,   pid.itae ?? 0];
+            metricsChart.data.datasets[1].data = [onoff.iae ?? 0, onoff.ise ?? 0, onoff.itae ?? 0];
+            metricsChart.update();
+        }
+    } catch (e) {
+        console.warn('Metrics refresh error:', e);
+    }
 }
 
 // ==================== EVENT LOG ====================
@@ -314,30 +411,16 @@ async function refreshLogs() {
 // ==================== SYSTEM STATUS TAB ====================
 async function refreshStatus() {
     try {
+        if (latestStatus && latestStatus.status === 'success') {
+            renderSystemStatus(latestStatus);
+            return;
+        }
+
         const json = await fetchStatus();
         if (json.status !== 'success') return;
 
-        for (const [algo, data] of Object.entries(json.reactors)) {
-            const suffix = algo === 'ON/OFF' ? 'onoff' : 'pid';
-
-            const onlineEl = document.getElementById(`status-online-${suffix}`);
-            const phEl     = document.getElementById(`status-ph-val-${suffix}`);
-            const tempEl   = document.getElementById(`status-temp-val-${suffix}`);
-
-            if (onlineEl) onlineEl.innerText = data.online ? 'Online' : 'Offline';
-            if (phEl)     phEl.innerText     = data.online ? data.ph.toFixed(2)          : '—';
-            if (tempEl)   tempEl.innerText   = data.online ? `${data.temperature.toFixed(1)} °C` : '—';
-
-            // PID params
-            if (algo === 'PID' && data.algorithm_params) {
-                const kpEl = document.getElementById('status-kp');
-                const kiEl = document.getElementById('status-ki');
-                const kdEl = document.getElementById('status-kd');
-                if (kpEl) kpEl.innerText = data.algorithm_params.kp;
-                if (kiEl) kiEl.innerText = data.algorithm_params.ki;
-                if (kdEl) kdEl.innerText = data.algorithm_params.kd;
-            }
-        }
+        latestStatus = json;
+        renderSystemStatus(json);
     } catch (e) {
         console.warn('Status refresh error:', e);
     }
@@ -354,13 +437,21 @@ function switchTab(tabId) {
     });
     document.getElementById(`tab-${tabId}`).classList.add('border-lime-400');
 
+    const selector = document.getElementById('algorithm-selector');
+    selector.style.display = tabId === 'parameters' ? 'flex' : 'none';
+
     if (tabId === 'visualization') {
-        setTimeout(() => { if (comparisonChart) comparisonChart.resize(); }, 100);
-        updateComparisonChart();
+        setTimeout(() => {
+            if (comparisonPhChart)   comparisonPhChart.resize();
+            if (comparisonTempChart) comparisonTempChart.resize();
+            if (metricsChart)        metricsChart.resize();
+        }, 100);
+        pollData();
         refreshLogs();
+        refreshMetrics();
     }
     if (tabId === 'status') {
-        setTimeout(() => { if (comparisonChart) comparisonChart.resize(); }, 100);
+        setTimeout(() => {}, 100);
         refreshStatus();
     }
 }
@@ -368,26 +459,6 @@ function switchTab(tabId) {
 // ==================== INITIALIZATION ====================
 document.addEventListener('DOMContentLoaded', async () => {
     initializeCharts();
-
-    // Pre-fill ring-buffers from history endpoint
-    try {
-        const hist = await fetchHistory();
-        if (hist.status === 'success') {
-            for (const algo of ['ON/OFF', 'PID']) {
-                const d = hist.data[algo];
-                if (!d) continue;
-                d.ph.forEach((ph, i) => {
-                    pushPoint(dataStore[algo], ph, d.temperature[i], d.timestamps[i]);
-                });
-            }
-            updateCharts();
-            updateComparisonChart();
-        }
-    } catch (e) {
-        console.warn('History pre-fill failed (simulation may not have started yet):', e);
-    }
-
-    // First poll immediately, then every 5 seconds (matches DT=5 in .env)
     await pollData();
     pollInterval = setInterval(pollData, 5000);
 });

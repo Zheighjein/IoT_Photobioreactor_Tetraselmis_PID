@@ -231,7 +231,7 @@ def get_notifications():
         now = datetime.now()
         date_label = now.strftime('%B %d, %Y')
 
-        rows = list(reversed(rows))  # oldest first
+        rows = list(rows)  # newest first (ORDER BY rowid DESC)
 
         for row in rows:
             algo = 'PID' if row['reactor_id'] == 1 else 'ON/OFF'

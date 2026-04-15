@@ -13,6 +13,56 @@ let systemActive = false;
 const MAX_POINTS_PH   = 4;
 const MAX_POINTS_TEMP = 8;
 
+// ==================== NOTIFICATION BADGE ====================
+const notifQueue = [];
+let notifCount = 0;
+const notifState = {};
+
+function pushNotif(algo, param, value, status) {
+    const key = `${algo}-${param}`;
+    if (notifState[key] === status) return; // no change, skip
+    notifState[key] = status;
+
+    const time  = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const color = status === 'ALERT' ? 'text-red-600' : status === 'STABLE' ? 'text-green-600' : 'text-amber-500';
+    const icon  = status === 'ALERT' ? '⚠️' : status === 'STABLE' ? '✅' : '🔔';
+    const algoLabel = algo === 'PID' ? 'Photobioreactor 1 (PID)' : 'Photobioreactor 2 (ON/OFF)';
+    notifQueue.unshift({ algo: algoLabel, param, value, status, time, icon, color });
+    if (notifQueue.length > 10) notifQueue.pop();
+    notifCount++;
+
+    const badge = document.getElementById('notif-badge');
+    badge.textContent = notifCount > 9 ? '9+' : notifCount;
+    badge.classList.remove('hidden');
+    renderNotifList();
+}
+
+function renderNotifList() {
+    const list = document.getElementById('notif-list');
+    if (!list) return;
+    if (!notifQueue.length) {
+        list.innerHTML = '<li class="px-4 py-6 text-center text-xs text-gray-400">No new notifications</li>';
+        return;
+    }
+    list.innerHTML = notifQueue.map(n => `
+        <li class="px-4 py-3">
+            <div class="flex justify-between items-start">
+                <div>
+                    <p class="text-xs font-bold ${n.color}">${n.icon} ${n.status === 'STABLE' ? 'SUCCESS' : n.status} — ${n.algo}</p>
+                    <p class="text-xs text-gray-600 mt-0.5">${n.param}: ${n.value}</p>
+                </div>
+                <span class="text-[10px] text-gray-400 whitespace-nowrap ml-2">${n.time}</span>
+            </div>
+        </li>`).join('');
+}
+
+function clearNotifBadge() {
+    notifCount = 0;
+    document.getElementById('notif-badge').classList.add('hidden');
+    notifQueue.length = 0;
+    renderNotifList();
+}
+
 // ==================== API HELPERS ====================
 async function fetchHistory() {
     const res = await fetch('/api/history');
@@ -148,6 +198,18 @@ async function pollData() {
         } else {
             renderLiveParameters(statusJson);
             renderSystemStatus(statusJson);
+
+            // Check both reactors for notification badge
+            const serverTime = statusJson.server_time;
+            for (const [algo, data] of Object.entries(statusJson.reactors)) {
+                if (!data.online || !data.timestamp) continue;
+                if ((serverTime - data.timestamp) * 1000 >= 10000) continue;
+                const cfg = reactorConfig[algo];
+                const phStatus   = data.co2 === 1 ? 'ADJUSTING' : 'STABLE';
+                const tempStatus = data.temperature < cfg.tempMin || data.temperature > cfg.tempMax ? 'ALERT' : 'STABLE';
+                pushNotif(algo, 'pH',  data.ph.toFixed(2),              phStatus);
+                pushNotif(algo, 'Temp', data.temperature.toFixed(1) + '°C', tempStatus);
+            }
         }
 
         const hist = await fetchHistory();
@@ -459,6 +521,18 @@ function switchTab(tabId) {
 // ==================== INITIALIZATION ====================
 document.addEventListener('DOMContentLoaded', async () => {
     initializeCharts();
+
+    document.getElementById('bell-btn').addEventListener('click', e => {
+        e.preventDefault();
+        document.getElementById('notif-dropdown').classList.toggle('hidden');
+    });
+    document.addEventListener('click', e => {
+        if (!document.getElementById('bell-btn').contains(e.target)) {
+            document.getElementById('notif-dropdown').classList.add('hidden');
+        }
+    });
+    renderNotifList();
+
     await pollData();
     pollInterval = setInterval(pollData, 5000);
 });

@@ -13,6 +13,9 @@ don't forget to download the requirements.txt in terminal
 install the environment
 "pip install python-dotenv"
 
+install the library for pi (hardware)
+"pip install adafruit-circuitpython-ads1x15 RPi.GPIO"
+
 Run the environment in the terminal
 "python main.py"
 Then run this in another terminal
@@ -32,6 +35,19 @@ EVALUATION METRICS: IAE
 the pbr_sim.db won't be logged for now. If you try to push/commit it nothing will happen.
 Will turn this on again after final code
 
+
+
+
+
+must turn on i2c on pi  (IGNORE for raspberry pi only)
+"sudo raspi-config"
+-interface options
+-i2c --enable
+"sudo reboot"
+
+to test:
+"i2cdetect -y 1"
+if working you'll see "48"
 
 ____________________________________________________________________________________________________
 

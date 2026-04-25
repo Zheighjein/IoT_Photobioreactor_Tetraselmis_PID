@@ -2,14 +2,17 @@ import time
 import board
 import busio
 import RPi.GPIO as GPIO
-import adafruit_ads1x15.ads1115 as ADS
-from adafruit_ads1x15.analog_in import AnalogIn
 import os
 from dotenv import load_dotenv
 
+import adafruit_ads1x15.ads1115 as ADS
+from adafruit_ads1x15.analog_in import AnalogIn
+
+# ========================
+# ENV
+# ========================
 load_dotenv()
 TEST_MODE = os.getenv("TEST_MODE", "true").lower() == "true"
-
 
 # ========================
 # GPIO SETUP (2 RELAYS)
@@ -17,9 +20,10 @@ TEST_MODE = os.getenv("TEST_MODE", "true").lower() == "true"
 RELAY_1 = 17
 RELAY_2 = 27
 
-GPIO.setmode(GPIO.BCM)
-GPIO.setup(RELAY_1, GPIO.OUT)
-GPIO.setup(RELAY_2, GPIO.OUT)
+if not TEST_MODE:
+    GPIO.setmode(GPIO.BCM)
+    GPIO.setup(RELAY_1, GPIO.OUT)
+    GPIO.setup(RELAY_2, GPIO.OUT)
 
 # ========================
 # I2C + ADS1115 SETUP
@@ -27,17 +31,19 @@ GPIO.setup(RELAY_2, GPIO.OUT)
 i2c = busio.I2C(board.SCL, board.SDA)
 ads = ADS.ADS1115(i2c)
 
-ph_channel = AnalogIn(ads, ADS.P0)
+# ========================
+# CHANNELS (2 INPUTS)
+# ========================
+ph_channel = AnalogIn(ads, 0)
+ch2_channel = AnalogIn(ads, 1)
 
 # ========================
 # PH SENSOR
 # ========================
 def read_ph():
     voltage = ph_channel.voltage
-
-    # CALIBRATE THIS WITH BUFFER SOLUTIONS
+    # CALIBRATE WITH BUFFER SOLUTIONS
     ph = 7 + ((2.5 - voltage) / 0.18)
-
     return ph
 
 # ========================
@@ -45,7 +51,6 @@ def read_ph():
 # ========================
 def read_temp(sensor_id):
     path = f"/sys/bus/w1/devices/{sensor_id}/w1_slave"
-
     with open(path, "r") as f:
         lines = f.readlines()
 
@@ -54,8 +59,13 @@ def read_temp(sensor_id):
 
     temp_str = lines[1].split("t=")[-1]
     temp_c = float(temp_str) / 1000.0
-
     return temp_c
+
+# ========================
+# SECOND ANALOG CHANNEL
+# ========================
+def read_channel_2():
+    return ch2_channel.voltage
 
 # ========================
 # CO2 CONTROL

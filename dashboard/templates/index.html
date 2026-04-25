@@ -54,6 +54,33 @@
     <!-- Main Content -->
     <main class="max-w-4xl mx-auto -mt-16 px-4 relative z-10">
 
+        <!-- Autotune Banner -->
+        <div id="autotune-banner" class="hidden mb-6 bg-amber-50 border border-amber-300 rounded-2xl shadow-lg p-5">
+            <div class="flex items-center gap-3 mb-4">
+                <span id="autotune-dot" class="w-3 h-3 bg-amber-400 rounded-full animate-pulse"></span>
+                <span id="autotune-title" class="font-bold text-amber-800 uppercase tracking-widest text-sm">Autotune In Progress</span>
+            </div>
+            <div class="grid grid-cols-2 gap-4 text-sm">
+                <div class="bg-white rounded-xl p-3 border border-amber-200">
+                    <p class="text-xs text-gray-400 uppercase font-semibold mb-1">Live pH (R1)</p>
+                    <p id="autotune-ph" class="text-2xl font-bold text-gray-800">—</p>
+                </div>
+                <div class="bg-white rounded-xl p-3 border border-amber-200">
+                    <p class="text-xs text-gray-400 uppercase font-semibold mb-1">Time Remaining</p>
+                    <p id="autotune-countdown" class="text-2xl font-bold text-gray-800">—</p>
+                </div>
+            </div>
+            <div id="autotune-pid-result" class="hidden mt-4 bg-white rounded-xl p-4 border border-green-200">
+                <p class="text-xs font-bold uppercase tracking-widest text-green-700 mb-2">✅ Ziegler-Nichols PID Parameters</p>
+                <div class="grid grid-cols-3 gap-3 text-sm text-center">
+                    <div><p class="text-xs text-gray-400">Kp</p><p id="autotune-kp" class="font-bold text-gray-800">—</p></div>
+                    <div><p class="text-xs text-gray-400">Ki</p><p id="autotune-ki" class="font-bold text-gray-800">—</p></div>
+                    <div><p class="text-xs text-gray-400">Kd</p><p id="autotune-kd" class="font-bold text-gray-800">—</p></div>
+                </div>
+            </div>
+            <p id="autotune-transition" class="hidden mt-3 text-center text-sm font-semibold text-green-700">✅ Autotune Complete — Switching to PID + ON/OFF</p>
+        </div>
+
         <!-- Algorithm Toggle -->
         <div id="algorithm-selector" class="flex justify-center mb-8">
             <div class="bg-gray-200 p-1 rounded-full shadow-inner inline-flex border border-gray-300">

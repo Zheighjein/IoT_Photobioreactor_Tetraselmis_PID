@@ -48,7 +48,7 @@ if USE_AUTOTUNE:
 
     insert_event(1, "SYSTEM", "Starting autotune", "Relay tuning", "adjusting")
 
-    AUTOTUNE_DURATION = 20  # testing #make this into 86400 for a full day
+    AUTOTUNE_DURATION = 86400  # 24 hours
     autotune_start = time.time()
 
     while time.time() - autotune_start < AUTOTUNE_DURATION:

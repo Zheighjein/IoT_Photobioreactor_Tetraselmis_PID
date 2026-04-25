@@ -297,4 +297,11 @@ def get_metrics():
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 if __name__ == "__main__":
+    from database.db import init_db
+
+    # Ensure database + tables exist before Flask starts
+    init_db()
+
+    print("✅ Database initialized successfully")
+
     app.run(host='0.0.0.0', port=5000, debug=True)

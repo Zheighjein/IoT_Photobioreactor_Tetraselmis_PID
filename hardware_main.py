@@ -21,9 +21,8 @@ init_db()
 SETPOINT = float(os.getenv("SP", 7.5))
 DT = float(os.getenv("DT", 5))
 
-# SAFETY / TESTING FLAGS
-TEST_MODE = os.getenv("TEST_MODE", "true").lower() == "true"  #ONLY ALTER THIS IN .ENV
-USE_AUTOTUNE = os.getenv("USE_AUTOTUNE", "true").lower() == "true" #ONLY ALTER THIS IN .ENV 
+TEST_MODE = os.getenv("TEST_MODE", "true").lower() == "true"
+USE_AUTOTUNE = os.getenv("USE_AUTOTUNE", "true").lower() == "true"
 
 print("=== RUNNING IN HARDWARE MODE ===")
 
@@ -31,10 +30,10 @@ if TEST_MODE:
     print("TEST MODE ENABLED (relay will NOT activate)")
 
 print("Initializing sensors...")
-time.sleep(2)  # allow I2C + sensors to stabilize
+time.sleep(2)
 
 # ========================
-# REACTORS (NO SIM)
+# REACTORS
 # ========================
 reactors = {
     1: {"co2": 0, "mode": "AUTOTUNE", "iae": 0, "ise": 0, "itae": 0},
@@ -42,17 +41,20 @@ reactors = {
 }
 
 # ========================
-# AUTOTUNE OR MANUAL PID
+# AUTOTUNE (1 DAY)
 # ========================
 if USE_AUTOTUNE:
     autotune = RelayAutotune(setpoint=SETPOINT)
 
     insert_event(1, "SYSTEM", "Starting autotune", "Relay tuning", "adjusting")
 
-    while reactors[1]["mode"] == "AUTOTUNE":
+    AUTOTUNE_DURATION = 86400  # 1 day
+    autotune_start = time.time()
+
+    while time.time() - autotune_start < AUTOTUNE_DURATION:
         try:
             ph = read_ph()
-            temp = read_temp()
+            temp = read_temp("28-0000006dc349")
         except Exception as e:
             print(f"[ERROR] Sensor read failed: {e}")
             continue
@@ -60,47 +62,49 @@ if USE_AUTOTUNE:
         output = autotune.step(ph)
 
         reactors[1]["co2"] = 1 if output < 0 else 0
-        set_co2(reactors[1]["co2"])
+
+        if not TEST_MODE:
+            set_co2(1, reactors[1]["co2"])
 
         autotune.record(ph)
 
-        insert_event(1, "PH", "Autotuning in progress", "Oscillation", "adjusting")
+        insert_event(1, "PH", "Autotuning", "Oscillation", "adjusting")
 
         print(f"[AUTOTUNE] pH={ph:.3f} CO2={reactors[1]['co2']}")
 
-        amp, per = autotune.get_params()
-
-        if amp and per:
-            pid_vals = autotune.compute_pid(amp, per)
-
-            if pid_vals:
-                Kp, Ki, Kd = pid_vals
-
-                insert_pid(1, Kp, Ki, Kd)
-
-                insert_event(1, "SYSTEM", "Autotune complete", "PID parameters ready", "success")
-
-                reactors[1]["pid"] = PID(Kp, Ki, Kd, setpoint=SETPOINT)
-
-                # RESET METRICS
-                for r in reactors.values():
-                    r["iae"] = 0
-                    r["ise"] = 0
-                    r["itae"] = 0
-
-                # START BOTH SYSTEMS
-                reactors[1]["mode"] = "PID"
-                reactors[2]["mode"] = "ONOFF"
-
-                insert_event(1, "SYSTEM", "Control started", "PID active", "running")
-                insert_event(2, "SYSTEM", "Control started", "ON/OFF active", "running")
-
-                break
-
         time.sleep(DT)
 
+    # ========================
+    # AFTER 1 DAY → COMPUTE PID
+    # ========================
+    print("Autotune finished. Computing PID...")
+
+    amp, per = autotune.get_params()
+    pid_vals = autotune.compute_pid(amp, per)
+
+    if not pid_vals:
+        raise Exception("Autotune failed: No PID values computed")
+
+    Kp, Ki, Kd = pid_vals
+
+    insert_pid(1, Kp, Ki, Kd)
+
+    reactors[1]["pid"] = PID(Kp, Ki, Kd, setpoint=SETPOINT)
+
+    # RESET METRICS
+    for r in reactors.values():
+        r["iae"] = 0
+        r["ise"] = 0
+        r["itae"] = 0
+
+    # SWITCH MODES
+    reactors[1]["mode"] = "PID"
+    reactors[2]["mode"] = "ONOFF"
+
+    insert_event(1, "SYSTEM", "Autotune complete", "PID active", "success")
+    insert_event(2, "SYSTEM", "Control started", "ON/OFF active", "running")
+
 else:
-    # BACKUP PID VALUES (USE IF AUTOTUNE OFF)
     print("USING MANUAL PID VALUES")
 
     Kp, Ki, Kd = 2.0, 0.5, 0.1
@@ -111,9 +115,6 @@ else:
 
     reactors[1]["mode"] = "PID"
     reactors[2]["mode"] = "ONOFF"
-
-    insert_event(1, "SYSTEM", "Control started", "PID active (manual)", "running")
-    insert_event(2, "SYSTEM", "Control started", "ON/OFF active", "running")
 
 # ========================
 # MAIN LOOP
@@ -128,21 +129,23 @@ try:
         for rid, r in reactors.items():
 
             try:
+                if rid == 1:
+                    temp = read_temp("28-0000006dc349")
+                else:
+                    temp = read_temp("28-000000b2e281")
+
                 ph = read_ph()
-                temp = read_temp()
+
             except Exception as e:
                 print(f"[ERROR] Sensor read failed: {e}")
                 continue
 
-            # SENSOR DEBUG
-            print(f"[SENSOR] pH={ph:.3f} Temp={temp:.2f}")
+            print(f"[SENSOR] R{rid} pH={ph:.3f} Temp={temp:.2f}")
 
             error = SETPOINT - ph
             abs_error = abs(error)
 
-            # ========================
-            # PERFORMANCE METRICS
-            # ========================
+            # METRICS
             r["iae"] += abs_error * DT
             r["ise"] += (error ** 2) * DT
             r["itae"] += t * abs_error * DT
@@ -153,18 +156,16 @@ try:
             if r["mode"] == "PID":
                 output = r["pid"].compute(ph)
                 r["co2"] = 1 if output < 0 else 0
-                set_co2(r["co2"])
 
-                if ph > SETPOINT:
-                    insert_event(rid, "PH", "Above setpoint", "Inject CO2", "adjusting")
-                else:
-                    insert_event(rid, "PH", "Stable", "No action", "success")
+                if not TEST_MODE:
+                    set_co2(rid, r["co2"])
 
             elif r["mode"] == "ONOFF":
                 action = onoff_control(ph, SETPOINT)
                 if action is not None:
                     r["co2"] = action
-                    set_co2(r["co2"])
+                    if not TEST_MODE:
+                        set_co2(rid, r["co2"])
 
             elif r["mode"] == "IDLE":
                 continue
@@ -174,16 +175,12 @@ try:
             # ========================
             insert_reading(rid, now, ph, temp, r["co2"], r["mode"])
             insert_iae(rid, r["iae"])
+            insert_performance(rid, r["iae"], r["ise"], r["itae"])
 
             print(
-                f"[R{rid}] "
-                f"pH={ph:.3f} "
-                f"Temp={temp:.2f} "
-                f"CO2={r['co2']} "
-                f"Mode={r['mode']} "
-                f"IAE={r['iae']:.3f} "
-                f"ISE={r['ise']:.3f} "
-                f"ITAE={r['itae']:.3f}"
+                f"[R{rid}] pH={ph:.3f} Temp={temp:.2f} "
+                f"CO2={r['co2']} Mode={r['mode']} "
+                f"IAE={r['iae']:.3f}"
             )
 
         time.sleep(DT)
@@ -193,8 +190,6 @@ except KeyboardInterrupt:
 
     for rid, r in reactors.items():
         insert_summary(rid, r["iae"], r["ise"], r["itae"], r["mode"])
-
-    print("Saved to database.")
 
 finally:
     GPIO.cleanup()

@@ -31,21 +31,27 @@ if not TEST_MODE:
 i2c = busio.I2C(board.SCL, board.SDA)
 ads = ADS.ADS1115(i2c)
 
-# ========================
-# CHANNELS (2 INPUTS)
-# ========================
-ph_channel = AnalogIn(ads, 0)
-ch2_channel = AnalogIn(ads, 1)
+ph_channels = {
+    1: AnalogIn(ads, ADS.P0),
+    2: AnalogIn(ads, ADS.P1)
+}
 
 # ========================
 # PH SENSOR
 # ========================
-def read_ph():
-    voltage = ph_channel.voltage
-    # CALIBRATE WITH BUFFER SOLUTIONS
+def read_ph(reactor_id):
+    """
+    Reads pH from the specific channel assigned to the reactor_id.
+    """
+    if reactor_id not in ph_channels:
+        raise ValueError(f"No pH channel configured for Reactor {reactor_id}")
+
+    channel = ph_channels[reactor_id]
+    voltage = channel.voltage
+
+    # Calibrate with your buffer solutions — adjust slope/intercept as needed
     ph = 7 + ((2.5 - voltage) / 0.18)
     return ph
-
 # ========================
 # TEMPERATURE SENSOR (DS18B20)
 # ========================

@@ -53,7 +53,7 @@ if USE_AUTOTUNE:
 
     while time.time() - autotune_start < AUTOTUNE_DURATION:
         try:
-            ph = read_ph()
+            ph = read_ph(1)
             temp = read_temp("28-0000006dc349")
         except Exception as e:
             print(f"[ERROR] Sensor read failed: {e}")
@@ -70,7 +70,8 @@ if USE_AUTOTUNE:
 
         insert_event(1, "PH", "Autotuning", "Oscillation", "adjusting")
 
-        print(f"[AUTOTUNE] pH={ph:.3f} CO2={reactors[1]['co2']}")
+        elapsed = int(time.time() - autotune_start)
+        print(f"[AUTOTUNE] t={elapsed}s pH={ph:.3f} CO2={reactors[1]['co2']}")
 
         time.sleep(DT)
 
@@ -134,10 +135,10 @@ try:
                 else:
                     temp = read_temp("28-000000b2e281")
 
-                ph = read_ph()
+                ph = read_ph(rid)
 
             except Exception as e:
-                print(f"[ERROR] Sensor read failed: {e}")
+                print(f"[ERROR] Sensor read failed for R{rid}: {e}")
                 continue
 
             print(f"[SENSOR] R{rid} pH={ph:.3f} Temp={temp:.2f}")

@@ -148,8 +148,6 @@ try:
                 print(f"[ERROR] Sensor read failed for R{rid}: {e}")
                 continue
 
-            print(f"[SENSOR] R{rid} pH={ph:.3f} Temp={temp:.2f}")
-
             error = SETPOINT - ph
             abs_error = abs(error)
 
@@ -186,9 +184,14 @@ try:
             insert_performance(rid, r["iae"], r["ise"], r["itae"])
 
             print(
-                f"[R{rid}] pH={ph:.3f} Temp={temp:.2f} "
-                f"CO2={r['co2']} Mode={r['mode']} "
-                f"IAE={r['iae']:.3f}"
+                f"R{rid} ----------\n"
+                f"pH: {ph:.3f}\n"
+                f"Temp: {temp:.2f}\n"
+                f"CO2: {r['co2']}\n"
+                f"Mode: {r['mode']}\n"
+                f"IAE: {r['iae']:.3f}\n"
+                f"ISE: {r['ise']:.3f}\n"
+                f"ITAE: {r['itae']:.3f}\n"
             )
 
         time.sleep(DT)

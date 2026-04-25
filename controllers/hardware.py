@@ -32,8 +32,8 @@ i2c = busio.I2C(board.SCL, board.SDA)
 ads = ADS.ADS1115(i2c)
 
 ph_channels = {
-    1: AnalogIn(ads, ADS.P0),
-    2: AnalogIn(ads, ADS.P1)
+    1: AnalogIn(ads, 0),
+    2: AnalogIn(ads, 1)
 }
 
 # ========================

@@ -68,10 +68,18 @@ if USE_AUTOTUNE:
 
         autotune.record(ph)
 
+        # ✅ log BOTH pH and temperature (important for thesis)
+        insert_reading(1, time.time(), ph, temp, reactors[1]["co2"], "AUTOTUNE")
+
         insert_event(1, "PH", "Autotuning", "Oscillation", "adjusting")
 
         elapsed = int(time.time() - autotune_start)
-        print(f"[AUTOTUNE] t={elapsed}s pH={ph:.3f} CO2={reactors[1]['co2']}")
+
+        print(
+            f"[AUTOTUNE] t={elapsed}s "
+            f"pH={ph:.3f} Temp={temp:.2f} "
+            f"CO2={reactors[1]['co2']}"
+        )
 
         time.sleep(DT)
 

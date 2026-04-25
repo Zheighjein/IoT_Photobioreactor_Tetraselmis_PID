@@ -48,7 +48,7 @@ if USE_AUTOTUNE:
 
     insert_event(1, "SYSTEM", "Starting autotune", "Relay tuning", "adjusting")
 
-    AUTOTUNE_DURATION = 86400  # 1 day
+    AUTOTUNE_DURATION = 20  # testing
     autotune_start = time.time()
 
     while time.time() - autotune_start < AUTOTUNE_DURATION:
@@ -57,6 +57,7 @@ if USE_AUTOTUNE:
             temp = read_temp("28-0000006dc349")
         except Exception as e:
             print(f"[ERROR] Sensor read failed: {e}")
+            time.sleep(DT)
             continue
 
         output = autotune.step(ph)
@@ -68,23 +69,16 @@ if USE_AUTOTUNE:
 
         autotune.record(ph)
 
-        # ✅ log BOTH pH and temperature (important for thesis)
-        insert_reading(1, time.time(), ph, temp, reactors[1]["co2"], "AUTOTUNE")
-
-        insert_event(1, "PH", "Autotuning", "Oscillation", "adjusting")
-
         elapsed = int(time.time() - autotune_start)
 
-        print(
-            f"[AUTOTUNE] t={elapsed}s "
-            f"pH={ph:.3f} Temp={temp:.2f} "
-            f"CO2={reactors[1]['co2']}"
-        )
+        print(f"[AUTOTUNE] t={elapsed}s pH={ph:.3f} Temp={temp:.2f}")
 
         time.sleep(DT)
 
+    print(">>> EXITED AUTOTUNE LOOP <<<")
+
     # ========================
-    # AFTER 1 DAY → COMPUTE PID
+    # AFTER AUTOTUNE → COMPUTE PID
     # ========================
     print("Autotune finished. Computing PID...")
 
@@ -92,9 +86,10 @@ if USE_AUTOTUNE:
     pid_vals = autotune.compute_pid(amp, per)
 
     if not pid_vals:
-        raise Exception("Autotune failed: No PID values computed")
-
-    Kp, Ki, Kd = pid_vals
+        print("⚠️ Autotune failed → using fallback PID values")
+        Kp, Ki, Kd = 2.0, 0.5, 0.1   # If tuning phase fails
+    else:
+        Kp, Ki, Kd = pid_vals
 
     insert_pid(1, Kp, Ki, Kd)
 
@@ -109,6 +104,10 @@ if USE_AUTOTUNE:
     # SWITCH MODES
     reactors[1]["mode"] = "PID"
     reactors[2]["mode"] = "ONOFF"
+
+    print(">>> MODE SWITCH SUCCESS <<<")
+    print(f"Reactor 1 Mode: {reactors[1]['mode']}")
+    print(f"Reactor 2 Mode: {reactors[2]['mode']}")
 
     insert_event(1, "SYSTEM", "Autotune complete", "PID active", "success")
     insert_event(2, "SYSTEM", "Control started", "ON/OFF active", "running")

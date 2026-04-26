@@ -6,7 +6,8 @@ from controllers.pid import PID
 from controllers.onoff import onoff_control
 from controllers.autotune import RelayAutotune
 
-from controllers.hardware import read_ph, read_temp, set_co2
+# >>> ADDED (import light control)
+from controllers.hardware import read_ph, read_temp, set_co2, set_light
 
 from database.db import *
 
@@ -31,6 +32,14 @@ if TEST_MODE:
 
 print("Initializing sensors...")
 time.sleep(2)
+
+# ========================
+# LIGHT CONFIG
+# ========================
+# >>> ADDED
+LIGHT_ON_HOURS = 12
+LIGHT_OFF_HOURS = 12
+LIGHT_CYCLE = (LIGHT_ON_HOURS + LIGHT_OFF_HOURS) * 3600
 
 # ========================
 # REACTORS
@@ -60,6 +69,18 @@ if USE_AUTOTUNE:
             time.sleep(DT)
             continue
 
+        # >>> ADDED LIGHT CONTROL INSIDE AUTOTUNE
+        elapsed = int(time.time() - autotune_start)
+        cycle_time = elapsed % LIGHT_CYCLE
+
+        if cycle_time < (LIGHT_ON_HOURS * 3600):
+            light_state = 1
+        else:
+            light_state = 0
+
+        if not TEST_MODE:
+            set_light(light_state)
+
         output = autotune.step(ph)
 
         reactors[1]["co2"] = 1 if output < 0 else 0
@@ -69,9 +90,7 @@ if USE_AUTOTUNE:
 
         autotune.record(ph)
 
-        elapsed = int(time.time() - autotune_start)
-
-        print(f"[AUTOTUNE] t={elapsed}s pH={ph:.3f} Temp={temp:.2f}")
+        print(f"[AUTOTUNE] t={elapsed}s pH={ph:.3f} Temp={temp:.2f} Light={light_state}")
 
         time.sleep(DT)
 
@@ -87,7 +106,7 @@ if USE_AUTOTUNE:
 
     if not pid_vals:
         print("⚠️ Autotune failed → using fallback PID values")
-        Kp, Ki, Kd = 2.0, 0.5, 0.1   # If tuning phase fails
+        Kp, Ki, Kd = 2.0, 0.5, 0.1
     else:
         Kp, Ki, Kd = pid_vals
 
@@ -95,19 +114,15 @@ if USE_AUTOTUNE:
 
     reactors[1]["pid"] = PID(Kp, Ki, Kd, setpoint=SETPOINT)
 
-    # RESET METRICS
     for r in reactors.values():
         r["iae"] = 0
         r["ise"] = 0
         r["itae"] = 0
 
-    # SWITCH MODES
     reactors[1]["mode"] = "PID"
     reactors[2]["mode"] = "ONOFF"
 
     print(">>> MODE SWITCH SUCCESS <<<")
-    print(f"Reactor 1 Mode: {reactors[1]['mode']}")
-    print(f"Reactor 2 Mode: {reactors[2]['mode']}")
 
     insert_event(1, "SYSTEM", "Autotune complete", "PID active", "success")
     insert_event(2, "SYSTEM", "Control started", "ON/OFF active", "running")
@@ -133,6 +148,21 @@ try:
     while True:
         t = time.time() - start
         now = time.time()
+
+        # ========================
+        # LIGHT CONTROL (GLOBAL)
+        # ========================
+        # >>> ADDED
+        elapsed = int(now - start)
+        cycle_time = elapsed % LIGHT_CYCLE
+
+        if cycle_time < (LIGHT_ON_HOURS * 3600):
+            light_state = 1
+        else:
+            light_state = 0
+
+        if not TEST_MODE:
+            set_light(light_state)
 
         for rid, r in reactors.items():
 
@@ -179,7 +209,8 @@ try:
             # ========================
             # LOGGING
             # ========================
-            insert_reading(rid, now, ph, temp, r["co2"], r["mode"])
+            # >>> UPDATED (added light_state)
+            insert_reading(rid, now, ph, temp, r["co2"], light_state, r["mode"])
             insert_iae(rid, r["iae"])
             insert_performance(rid, r["iae"], r["ise"], r["itae"])
 
@@ -188,6 +219,7 @@ try:
                 f"pH: {ph:.3f}\n"
                 f"Temp: {temp:.2f}\n"
                 f"CO2: {r['co2']}\n"
+                f"Light: {light_state}\n"
                 f"Mode: {r['mode']}\n"
                 f"IAE: {r['iae']:.3f}\n"
                 f"ISE: {r['ise']:.3f}\n"

@@ -17,13 +17,15 @@ TEST_MODE = os.getenv("TEST_MODE", "true").lower() == "true"
 # ========================
 # GPIO SETUP (2 RELAYS)
 # ========================
-RELAY_1 = 17
-RELAY_2 = 27
+RELAY_1 = 17  # CO2 Reactor 1
+RELAY_2 = 27  # CO2 Reactor 2
+RELAY_LIGHT = 22  # LIGHT
 
 if not TEST_MODE:
     GPIO.setmode(GPIO.BCM)
     GPIO.setup(RELAY_1, GPIO.OUT)
     GPIO.setup(RELAY_2, GPIO.OUT)
+    GPIO.setup(RELAY_LIGHT, GPIO.OUT)
 
 # ========================
 # I2C + ADS1115 SETUP
@@ -68,7 +70,7 @@ def read_temp(sensor_id):
     return temp_c
 
 # ========================
-# SECOND ANALOG CHANNEL
+# SECOND ANALOG PH CHANNEL
 # ========================
 def read_channel_2():
     return ch2_channel.voltage
@@ -83,3 +85,13 @@ def set_co2(reactor_id, state):
 
     pin = RELAY_1 if reactor_id == 1 else RELAY_2
     GPIO.output(pin, GPIO.HIGH if state == 1 else GPIO.LOW)
+
+# ========================
+# LIGHT CONTROL
+# ========================
+def set_light(state):
+    if TEST_MODE:
+        print(f"[TEST MODE] LIGHT -> {state}")
+        return
+
+    GPIO.output(RELAY_LIGHT, GPIO.HIGH if state else GPIO.LOW) #swap if output is reversed

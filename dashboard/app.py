@@ -222,23 +222,28 @@ def get_logs():
 def get_notifications():
     try:
         conn = get_db_connection()
+        from datetime import timedelta
+        now        = datetime.now()
+        start_ts   = datetime(now.year, now.month, now.day).timestamp()
+        end_ts     = (datetime(now.year, now.month, now.day) + timedelta(days=7)).timestamp()
+
         rows = conn.execute(
-            "SELECT ph, temp, co2, reactor_id, time, rowid FROM readings ORDER BY rowid DESC LIMIT 20"
+            "SELECT ph, temp, co2, reactor_id, time, rowid FROM readings "
+            "WHERE time >= ? AND time < ? ORDER BY rowid DESC",
+            (start_ts, end_ts)
         ).fetchall()
         conn.close()
 
         grouped = {}
-        now = datetime.now()
-        date_label = now.strftime('%B %d, %Y')
-
-        rows = list(rows)  # newest first (ORDER BY rowid DESC)
 
         for row in rows:
             algo = 'PID' if row['reactor_id'] == 1 else 'ON/OFF'
             ph = row['ph']
             temp = row['temp']
-            timestamp = datetime.fromtimestamp(row['time']).strftime('%B %d, %Y  %I:%M:%S %p')
-            time_only = datetime.fromtimestamp(row['time']).strftime('%I:%M:%S %p')
+            row_dt     = datetime.fromtimestamp(row['time'])
+            date_label = row_dt.strftime('%B %d, %Y')
+            timestamp  = row_dt.strftime('%B %d, %Y  %I:%M:%S %p')
+            time_only  = row_dt.strftime('%I:%M:%S %p')
 
             if row['co2'] == 1:
                 parameter = f"pH: {ph:.2f}"

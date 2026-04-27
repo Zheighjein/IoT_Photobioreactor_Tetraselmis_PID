@@ -103,8 +103,24 @@
             color: #5c7c5e;
             text-transform: uppercase;
             margin-bottom: 0.4rem;
-            padding-left: 0.2rem;
+            padding: 0.5rem 0.75rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: #eaf5ea;
+            border: 1px solid #c8dfc8;
+            border-radius: 0.6rem;
+            transition: background 0.15s;
         }
+
+        .day-label:hover { background: #d4ebd4; }
+
+        .day-chevron { transition: transform 0.2s; font-size: 0.7rem; color: #5c7c5e; }
+        .day-chevron.open { transform: rotate(180deg); }
+
+        .day-body { overflow: hidden; transition: max-height 0.3s ease; }
+        .day-body.collapsed { display: none; }
 
         .empty-state {
             text-align: center;
@@ -175,6 +191,13 @@
             document.getElementById(b).className = 'filter-btn inactive';
         }
 
+        function toggleDay(dayId) {
+            const body    = document.getElementById('body-' + dayId);
+            const chevron = document.getElementById('dc-' + dayId);
+            body.classList.toggle('collapsed');
+            chevron.classList.toggle('open');
+        }
+
         function toggleDetail(id) {
             const detail = document.getElementById('d-' + id);
             const chevron = document.getElementById('c-' + id);
@@ -197,15 +220,26 @@
             }
 
             let hasAny = false;
+            const today = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: '2-digit' });
 
             for (const [day, items] of Object.entries(json.notifications)) {
                 const filtered = items.filter(item => item.reactor === selectedReactor);
                 if (!filtered.length) continue;
                 hasAny = true;
 
+                const isToday   = day === today;
+                const dayId     = day.replace(/[\s,]/g, '-');
+                const bodyClass = isToday ? 'day-body' : 'day-body collapsed';
+                const chevClass = isToday ? 'day-chevron open' : 'day-chevron';
+
                 const section = document.createElement('div');
 
-                let html = `<p class="day-label"><i class="fas fa-calendar-alt mr-1"></i>${day}</p>
+                let html = `
+                    <div class="day-label" onclick="toggleDay('${dayId}')">
+                        <span><i class="fas fa-calendar-alt mr-2"></i>${day} <span class="ml-2 font-normal opacity-60">Status</span></span>
+                        <i id="dc-${dayId}" class="fas fa-chevron-down ${chevClass}"></i>
+                    </div>
+                    <div id="body-${dayId}" class="${bodyClass} mb-2">
                     <div class="notif-card">
                         <div class="notif-header">
                             <span>Parameter</span>
@@ -216,7 +250,7 @@
                         </div>`;
 
                 filtered.forEach((item, idx) => {
-                    const uid = `${day.replace(/\s/g,'-')}-${idx}`;
+                    const uid = `${dayId}-${idx}`;
                     const isSuccess = item.status === 'SUCCESS';
                     const badge = isSuccess
                         ? `<span class="badge badge-success">SUCCESS</span>`
@@ -236,12 +270,12 @@
                                 <div><span>Status:</span> ${item.status}</div>
                                 <div><span>Parameter:</span> ${item.parameter}</div>
                                 <div><span>Issue:</span> ${item.issue}</div>
-                                <div class="col-span-2" style="grid-column:span 2"><span>Date / Time:</span> ${item.datetime}</div>
+                                <div class="col-span-2" style="grid-column:span 2"><span>Time:</span> ${item.time_only}</div>
                             </div>
                         </div>`;
                 });
 
-                html += `</div>`;
+                html += `</div></div></div>`;
                 section.innerHTML = html;
                 container.appendChild(section);
             }

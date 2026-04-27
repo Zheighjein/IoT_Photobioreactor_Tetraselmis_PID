@@ -6,6 +6,11 @@ Search: "python.terminal.useEnvFile"
 and check
 
 
+# ACTIVATE THE ENVIRONMENT
+1. python3 -m venv venv 
+2. source venv/bin/activate
+
+
 don't forget to download the requirements.txt in terminal
 
 "pip install -r requirements.txt"
@@ -53,3 +58,5 @@ ________________________________________________________________________________
 
 
 
+- SENSOR_1 = "28-0000006dc349" - RED
+- SENSOR_2 = "28-000000b2e281" - BLUE

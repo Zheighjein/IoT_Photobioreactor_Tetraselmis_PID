@@ -271,6 +271,49 @@ def get_notifications():
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 
+@app.route('/api/autotune')
+def get_autotune_status():
+    try:
+        conn = get_db_connection()
+
+        row = conn.execute(
+            "SELECT mode FROM readings WHERE reactor_id = 1 ORDER BY rowid DESC LIMIT 1"
+        ).fetchone()
+
+        mode = row['mode'] if row else 'AUTOTUNE'
+
+        pid_row = conn.execute(
+            "SELECT kp, ki, kd FROM pid_params WHERE reactor_id = 1 ORDER BY rowid DESC LIMIT 1"
+        ).fetchone()
+
+        ph_row = conn.execute(
+            "SELECT ph FROM readings WHERE reactor_id = 1 ORDER BY rowid DESC LIMIT 1"
+        ).fetchone()
+
+        start_row = conn.execute(
+            "SELECT time FROM readings WHERE reactor_id = 1 AND mode = 'AUTOTUNE' ORDER BY rowid ASC LIMIT 1"
+        ).fetchone()
+
+        conn.close()
+
+        return jsonify({
+            'status':      'success',
+            'mode':        mode,
+            'ph':          round(ph_row['ph'], 3) if ph_row else None,
+            'autotune_start': start_row['time'] if start_row else None,
+            'autotune_duration': 86400,
+            'pid': {
+                'kp': round(pid_row['kp'], 4),
+                'ki': round(pid_row['ki'], 4),
+                'kd': round(pid_row['kd'], 4)
+            } if pid_row else None
+        })
+
+    except Exception as e:
+        print(f"Flask /api/autotune error: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
 @app.route('/api/metrics')
 def get_metrics():
     try:
@@ -297,4 +340,11 @@ def get_metrics():
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 if __name__ == "__main__":
+    from database.db import init_db
+
+    # Ensure database + tables exist before Flask starts
+    init_db()
+
+    print("✅ Database initialized successfully")
+
     app.run(host='0.0.0.0', port=5000, debug=True)

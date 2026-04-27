@@ -178,6 +178,66 @@ function renderSystemStatus(statusJson) {
     }
 }
 
+// ==================== AUTOTUNE ====================
+let countdownInterval = null;
+
+function formatCountdown(seconds) {
+    if (seconds <= 0) return '00:00:00';
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = Math.floor(seconds % 60);
+    return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+}
+
+async function pollAutotune() {
+    try {
+        const res = await fetch('/api/autotune');
+        const json = await res.json();
+        if (json.status !== 'success') return;
+
+        const banner     = document.getElementById('autotune-banner');
+        const selector   = document.getElementById('algorithm-selector');
+        const isAutotune = json.mode === 'AUTOTUNE';
+
+        banner.classList.remove('hidden');
+
+        if (json.ph !== null && json.ph !== undefined)
+            document.getElementById('autotune-ph').innerText = json.ph.toFixed(3);
+
+        if (isAutotune) {
+            selector.style.display = 'none';
+            document.getElementById('autotune-dot').className = 'w-3 h-3 bg-amber-400 rounded-full animate-pulse';
+            document.getElementById('autotune-title').innerText = 'Autotune In Progress';
+            document.getElementById('autotune-title').className = 'font-bold text-amber-800 uppercase tracking-widest text-sm';
+
+            if (countdownInterval) clearInterval(countdownInterval);
+            if (json.autotune_start) {
+                const endTime = json.autotune_start + json.autotune_duration;
+                countdownInterval = setInterval(() => {
+                    const remaining = endTime - (Date.now() / 1000);
+                    document.getElementById('autotune-countdown').innerText = formatCountdown(remaining);
+                }, 1000);
+            }
+        } else {
+            selector.style.display = '';
+            if (countdownInterval) { clearInterval(countdownInterval); countdownInterval = null; }
+            document.getElementById('autotune-dot').className = 'w-3 h-3 bg-green-500 rounded-full';
+            document.getElementById('autotune-title').innerText = 'Autotune Complete';
+            document.getElementById('autotune-title').className = 'font-bold text-green-700 uppercase tracking-widest text-sm';
+            document.getElementById('autotune-countdown').innerText = 'Done';
+            document.getElementById('autotune-transition').classList.remove('hidden');
+            if (json.pid) {
+                document.getElementById('autotune-pid-result').classList.remove('hidden');
+                document.getElementById('autotune-kp').innerText = json.pid.kp;
+                document.getElementById('autotune-ki').innerText = json.pid.ki;
+                document.getElementById('autotune-kd').innerText = json.pid.kd;
+            }
+        }
+    } catch (e) {
+        console.warn('Autotune poll error:', e);
+    }
+}
+
 // ==================== MAIN POLL ====================
 // Each poll fetches /api/history for all chart data (real DB values + real timestamps)
 // and /api/status for the live display and system status.
@@ -533,6 +593,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
     renderNotifList();
 
+    await pollAutotune();
     await pollData();
-    pollInterval = setInterval(pollData, 5000);
+    pollInterval = setInterval(async () => { await pollAutotune(); await pollData(); }, 5000);
 });

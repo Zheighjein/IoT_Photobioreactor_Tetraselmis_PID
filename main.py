@@ -41,6 +41,7 @@ while reactors[1]["mode"] == "AUTOTUNE":
 
     autotune.record(ph)
 
+    insert_reading(1, time.time(), ph, temp, reactors[1]["co2"], "AUTOTUNE")
     insert_event(1, "PH", "Autotuning in progress", "Oscillation", "adjusting")
 
     amp, per = autotune.get_params()

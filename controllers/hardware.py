@@ -15,17 +15,28 @@ load_dotenv()
 TEST_MODE = os.getenv("TEST_MODE", "true").lower() == "true"
 
 # ========================
-# GPIO SETUP (2 RELAYS)
+# GPIO SETUP
 # ========================
-RELAY_1 = 17  # CO2 Reactor 1
-RELAY_2 = 27  # CO2 Reactor 2
+RELAY_1 = 17      # CO2 Reactor 1
+RELAY_2 = 27      # CO2 Reactor 2
 RELAY_LIGHT = 22  # LIGHT
+
+# Active LOW relay:
+# LOW  = ON
+# HIGH = OFF
+RELAY_ON = GPIO.LOW
+RELAY_OFF = GPIO.HIGH
 
 if not TEST_MODE:
     GPIO.setmode(GPIO.BCM)
     GPIO.setup(RELAY_1, GPIO.OUT)
     GPIO.setup(RELAY_2, GPIO.OUT)
     GPIO.setup(RELAY_LIGHT, GPIO.OUT)
+
+    # Start everything OFF
+    GPIO.output(RELAY_1, RELAY_OFF)
+    GPIO.output(RELAY_2, RELAY_OFF)
+    GPIO.output(RELAY_LIGHT, RELAY_OFF)
 
 # ========================
 # I2C + ADS1115 SETUP
@@ -42,20 +53,17 @@ ph_channels = {
 # PH SENSOR
 # ========================
 def read_ph(reactor_id):
-    """
-    Reads pH from the specific channel assigned to the reactor_id.
-    """
     if reactor_id not in ph_channels:
         raise ValueError(f"No pH channel configured for Reactor {reactor_id}")
 
     channel = ph_channels[reactor_id]
     voltage = channel.voltage
 
-    # Calibrate with your buffer solutions — adjust slope/intercept as needed
     ph = 7 + ((2.5 - voltage) / 0.18)
     return ph
+
 # ========================
-# TEMPERATURE SENSOR (DS18B20)
+# TEMPERATURE SENSOR
 # ========================
 def read_temp(sensor_id):
     path = f"/sys/bus/w1/devices/{sensor_id}/w1_slave"
@@ -73,7 +81,7 @@ def read_temp(sensor_id):
 # SECOND ANALOG PH CHANNEL
 # ========================
 def read_channel_2():
-    return ch2_channel.voltage
+    return ph_channels[2].voltage
 
 # ========================
 # CO2 CONTROL
@@ -84,7 +92,11 @@ def set_co2(reactor_id, state):
         return
 
     pin = RELAY_1 if reactor_id == 1 else RELAY_2
-    GPIO.output(pin, GPIO.HIGH if state == 1 else GPIO.LOW)
+
+    if state:
+        GPIO.output(pin, RELAY_ON)
+    else:
+        GPIO.output(pin, RELAY_OFF)
 
 # ========================
 # LIGHT CONTROL
@@ -94,4 +106,9 @@ def set_light(state):
         print(f"[TEST MODE] LIGHT -> {state}")
         return
 
-    GPIO.output(RELAY_LIGHT, GPIO.HIGH if state else GPIO.LOW) #swap if output is reversed
+    if state:
+        GPIO.output(RELAY_LIGHT, RELAY_ON)
+        print("LIGHT ON")
+    else:
+        GPIO.output(RELAY_LIGHT, RELAY_OFF)
+        print("LIGHT OFF")

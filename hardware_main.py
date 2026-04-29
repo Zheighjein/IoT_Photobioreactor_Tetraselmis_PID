@@ -89,6 +89,7 @@ if USE_AUTOTUNE:
             set_co2(1, reactors[1]["co2"])
 
         autotune.record(ph)
+        insert_reading(1, time.time(), ph, temp, reactors[1]["co2"], light_state, "AUTOTUNE")
 
         print(f"[AUTOTUNE] t={elapsed}s pH={ph:.3f} Temp={temp:.2f} Light={light_state}")
 

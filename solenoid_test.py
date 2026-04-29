@@ -31,7 +31,7 @@ try:
     while True:
         # Open briefly → release pressure / bubbles
         co2_on()
-        time.sleep(2)
+        time.sleep(1)
 
         # Close → stabilize
         co2_off()

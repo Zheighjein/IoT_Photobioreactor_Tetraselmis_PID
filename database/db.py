@@ -109,7 +109,7 @@ def init_db():
 # INSERT FUNCTIONS
 # ========================
 
-def insert_reading(rid, t, ph, temp, co2, mode):
+def insert_reading(rid, t, ph, temp, co2, light_state, mode):
     conn = connect()
     c = conn.cursor()
 

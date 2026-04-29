@@ -14,3 +14,9 @@ __pycache__/
 # Database Results      #REMOVE THIS ONCE EVERYTHING'S DONE
 # ========================
 *.db
+
+# ========================
+# ENV      #REMOVE THIS ONCE EVERYTHING'S DONE
+# ========================
+.env
+/venv

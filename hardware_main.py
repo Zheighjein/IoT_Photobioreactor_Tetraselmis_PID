@@ -37,8 +37,8 @@ time.sleep(2)
 # LIGHT CONFIG
 # ========================
 # >>> ADDED
-LIGHT_ON_HOURS = 12
-LIGHT_OFF_HOURS = 12
+LIGHT_ON_HOURS = 0.001   # ~3.6 seconds
+LIGHT_OFF_HOURS = 0.001
 LIGHT_CYCLE = (LIGHT_ON_HOURS + LIGHT_OFF_HOURS) * 3600
 
 # ========================
@@ -164,6 +164,8 @@ try:
         if not TEST_MODE:
             set_light(light_state)
 
+            print(f"Light State: {light_state}")
+
         for rid, r in reactors.items():
 
             try:
@@ -235,4 +237,8 @@ except KeyboardInterrupt:
         insert_summary(rid, r["iae"], r["ise"], r["itae"], r["mode"])
 
 finally:
-    GPIO.cleanup()
+    if not TEST_MODE:
+        for rid in reactors:
+            set_co2(rid, 0)
+        set_light(0)
+        GPIO.cleanup()

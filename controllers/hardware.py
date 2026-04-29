@@ -106,9 +106,5 @@ def set_light(state):
         print(f"[TEST MODE] LIGHT -> {state}")
         return
 
-    if state:
-        GPIO.output(RELAY_LIGHT, RELAY_ON)
-        print("LIGHT ON")
-    else:
-        GPIO.output(RELAY_LIGHT, RELAY_OFF)
-        print("LIGHT OFF")
+    GPIO.output(RELAY_LIGHT, RELAY_ON if state else RELAY_OFF)
+    print("LIGHT ON" if state else "LIGHT OFF")

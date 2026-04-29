@@ -1,20 +1,46 @@
-import RPi.GPIO as GPIO
 import time
+import RPi.GPIO as GPIO
 
-PIN = 27
+# Two CO2 relays
+CO2_1 = 17
+CO2_2 = 27
+
+# Active LOW relay
+ON = GPIO.LOW
+OFF = GPIO.HIGH
 
 GPIO.setmode(GPIO.BCM)
-GPIO.setup(PIN, GPIO.OUT)
+GPIO.setup(CO2_1, GPIO.OUT)
+GPIO.setup(CO2_2, GPIO.OUT)
+
+def co2_on():
+    GPIO.output(CO2_1, ON)
+    GPIO.output(CO2_2, ON)
+    print("CO2 BOTH OPEN")
+
+def co2_off():
+    GPIO.output(CO2_1, OFF)
+    GPIO.output(CO2_2, OFF)
+    print("CO2 BOTH CLOSED")
 
 try:
-    while True:
-        GPIO.output(PIN, 0)  # ON (active LOW)
-        print("CO2 ON")
-        time.sleep(3)
+    # Start closed
+    co2_off()
+    time.sleep(2)
 
-        GPIO.output(PIN, 1)  # OFF
-        print("CO2 OFF")
-        time.sleep(3)
+    while True:
+        # Open briefly → release pressure / bubbles
+        co2_on()
+        time.sleep(2)
+
+        # Close → stabilize
+        co2_off()
+        time.sleep(5)
 
 except KeyboardInterrupt:
+    print("Stopping...")
+
+finally:
+    co2_off()
     GPIO.cleanup()
+

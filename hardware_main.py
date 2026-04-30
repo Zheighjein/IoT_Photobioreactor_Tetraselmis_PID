@@ -91,7 +91,13 @@ if USE_AUTOTUNE:
         autotune.record(ph)
         insert_reading(1, time.time(), ph, temp, reactors[1]["co2"], light_state, "AUTOTUNE")
 
-        print(f"[AUTOTUNE] t={elapsed}s pH={ph:.3f} Temp={temp:.2f} Light={light_state}")
+        print(
+            f"[AUTOTUNE] t={elapsed}s "
+            f"pH={ph:.3f} "
+            f"Temp={temp:.2f} "
+            f"CO2={reactors[1]['co2']} "
+            f"Light={light_state}"
+        )
 
         time.sleep(DT)
 

@@ -100,11 +100,8 @@ function setStatusBadge(param, text, cls) {
 }
 
 function updateStatus(param, val, min, max) {
-    const mid = (min + max) / 2;
-    if (val >= min && val <= max) {
+    if (val >= 23 && val <= 27) {
         setStatusBadge(param, 'STABLE', 'status-stable');
-    } else if (Math.abs(val - mid) < 0.5) {
-        setStatusBadge(param, 'ADJUSTING', 'status-adjusting');
     } else {
         setStatusBadge(param, 'ALERT', 'status-alert');
     }
@@ -116,7 +113,7 @@ function checkFreshness(statusJson) {
     for (const [algo, data] of Object.entries(statusJson.reactors)) {
         if (data.online && data.timestamp) {
             const age = (serverTime - data.timestamp) * 1000;
-            if (age < 10000) return true;
+            if (age < 15000) return true;
         }
     }
     return false;
@@ -128,25 +125,37 @@ function renderLiveParameters(statusJson) {
         return;
     }
 
-    const reactorData = statusJson.reactors[currentAlgorithm];
-    const config = reactorData?.config || reactorConfig[currentAlgorithm];
-    const serverTime = statusJson.server_time;
-    const isFresh = reactorData?.online && reactorData?.timestamp &&
-                    ((serverTime - reactorData.timestamp) * 1000) < 10000;
+    const serverTime  = statusJson.server_time;
+    const pidData     = statusJson.reactors['PID'];
+    const isAutotune  = pidData?.mode === 'AUTOTUNE';
 
-    if (!reactorData || !isFresh) {
+    // During autotune show R1; after autotune show selected algorithm
+    const reactorData = isAutotune ? pidData : statusJson.reactors[currentAlgorithm];
+    const config      = reactorData?.config || reactorConfig[isAutotune ? 'PID' : currentAlgorithm];
+    const isFresh     = reactorData?.online && reactorData?.timestamp &&
+                        ((serverTime - reactorData.timestamp) * 1000) < 15000;
+
+    // Fallback: if selected algo not fresh yet, try R1 (covers PID/ONOFF transition)
+    const fallback    = statusJson.reactors['PID'];
+    const fallbackFresh = fallback?.online && fallback?.timestamp &&
+                          ((serverTime - fallback.timestamp) * 1000) < 15000;
+
+    if (!reactorData || (!isFresh && !fallbackFresh)) {
         setIdle();
         return;
     }
 
-    const ph = reactorData.ph;
-    const temperature = reactorData.temperature;
-    const isAdjusting = reactorData.co2 === 1;
+    const active = isFresh ? reactorData : fallback;
+    const activeCfg = isFresh ? config : (reactorData?.config || reactorConfig['PID']);
+
+    const ph = active.ph;
+    const temperature = active.temperature;
+    const isAdjusting = active.co2 === 1;
 
     document.getElementById('val-ph').innerText   = ph.toFixed(2);
     document.getElementById('val-temp').innerText = temperature.toFixed(1);
     setStatusBadge('ph',   isAdjusting ? 'ADJUSTING' : 'STABLE', isAdjusting ? 'status-adjusting' : 'status-stable');
-    updateStatus('temp', temperature, config.tempMin, config.tempMax);
+    updateStatus('temp', temperature, activeCfg.tempMin, activeCfg.tempMax);
 }
 
 function renderSystemStatus(statusJson) {
@@ -160,7 +169,7 @@ function renderSystemStatus(statusJson) {
         const phEl     = document.getElementById(`status-ph-val-${suffix}`);
         const tempEl   = document.getElementById(`status-temp-val-${suffix}`);
 
-        const isFresh = data.online && data.timestamp && ((serverTime - data.timestamp) * 1000) < 10000;
+        const isFresh = data.online && data.timestamp && ((serverTime - data.timestamp) * 1000) < 15000;
         const onlineText = isFresh ? 'Online' : 'Offline';
 
         if (onlineEl) onlineEl.innerText = onlineText;
@@ -180,6 +189,7 @@ function renderSystemStatus(statusJson) {
 
 // ==================== AUTOTUNE ====================
 let countdownInterval = null;
+let lastAutotuneStart = null;
 
 function formatCountdown(seconds) {
     if (seconds <= 0) return '00:00:00';
@@ -201,8 +211,23 @@ async function pollAutotune() {
 
         banner.classList.remove('hidden');
 
-        if (json.ph !== null && json.ph !== undefined)
+        if (isAutotune && json.ph !== null && json.ph !== undefined)
             document.getElementById('autotune-ph').innerText = json.ph.toFixed(3);
+
+        // Push live autotune pH into PBR-1 chart
+        if (isAutotune && json.ph !== null) {
+            const now = new Date().toLocaleTimeString();
+            if (phChart) {
+                phChart.data.labels.push(now);
+                phChart.data.datasets[0].data.push(json.ph);
+                if (phChart.data.labels.length > MAX_POINTS_PH) {
+                    phChart.data.labels.shift();
+                    phChart.data.datasets[0].data.shift();
+                }
+                phChart.update('none');
+            }
+            document.getElementById('val-ph').innerText = json.ph.toFixed(2);
+        }
 
         if (isAutotune) {
             selector.style.display = 'none';
@@ -210,8 +235,9 @@ async function pollAutotune() {
             document.getElementById('autotune-title').innerText = 'Autotune In Progress';
             document.getElementById('autotune-title').className = 'font-bold text-amber-800 uppercase tracking-widest text-sm';
 
-            if (countdownInterval) clearInterval(countdownInterval);
-            if (json.autotune_start) {
+            if (json.autotune_start && json.autotune_start !== lastAutotuneStart) {
+                lastAutotuneStart = json.autotune_start;
+                if (countdownInterval) clearInterval(countdownInterval);
                 const endTime = json.autotune_start + json.autotune_duration;
                 countdownInterval = setInterval(() => {
                     const remaining = endTime - (Date.now() / 1000);
@@ -287,8 +313,9 @@ async function pollData() {
 function updateChartsFromHistory(data) {
     if (!systemActive) return;
 
-    const store = data[currentAlgorithm];
-    if (!store) return;
+    const isAutotune = latestStatus?.reactors?.['PID']?.mode === 'AUTOTUNE';
+    const store = isAutotune ? data['PID'] : data[currentAlgorithm];
+    if (!store || !store.ph.length) return;
 
     const phData   = store.ph.slice(-MAX_POINTS_PH);
     const tempData = store.temperature.slice(-MAX_POINTS_TEMP);

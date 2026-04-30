@@ -37,8 +37,8 @@ time.sleep(2)
 # LIGHT CONFIG
 # ========================
 # >>> ADDED
-LIGHT_ON_HOURS = 0.001   # ~3.6 seconds
-LIGHT_OFF_HOURS = 0.001
+LIGHT_ON_HOURS  = 12    # 12 hours ON
+LIGHT_OFF_HOURS = 12   # 12 hours OFF
 LIGHT_CYCLE = (LIGHT_ON_HOURS + LIGHT_OFF_HOURS) * 3600
 
 # ========================
@@ -57,7 +57,7 @@ if USE_AUTOTUNE:
 
     insert_event(1, "SYSTEM", "Starting autotune", "Relay tuning", "adjusting")
 
-    AUTOTUNE_DURATION = 86400  # 24 hours
+    AUTOTUNE_DURATION = int(os.getenv('AUTOTUNE_DURATION', 10800))
     autotune_start = time.time()
 
     while time.time() - autotune_start < AUTOTUNE_DURATION:
@@ -89,7 +89,7 @@ if USE_AUTOTUNE:
             set_co2(1, reactors[1]["co2"])
 
         autotune.record(ph)
-        insert_reading(1, time.time(), ph, temp, reactors[1]["co2"], light_state, "AUTOTUNE")
+        insert_reading(1, time.time(), ph, temp, reactors[1]["co2"], "AUTOTUNE")
 
         print(
             f"[AUTOTUNE] t={elapsed}s "
@@ -114,10 +114,12 @@ if USE_AUTOTUNE:
     if not pid_vals:
         print("⚠️ Autotune failed → using fallback PID values")
         Kp, Ki, Kd = 2.0, 0.5, 0.1
+        amp, per, ku = None, None, None
     else:
         Kp, Ki, Kd = pid_vals
+        ku = (4 * 1.0) / (3.14159 * amp)
 
-    insert_pid(1, Kp, Ki, Kd)
+    insert_pid(1, Kp, Ki, Kd, amp, per, ku)
 
     reactors[1]["pid"] = PID(Kp, Ki, Kd, setpoint=SETPOINT)
 
@@ -139,7 +141,7 @@ else:
 
     Kp, Ki, Kd = 2.0, 0.5, 0.1
 
-    insert_pid(1, Kp, Ki, Kd)
+    insert_pid(1, Kp, Ki, Kd, None, None, None)
 
     reactors[1]["pid"] = PID(Kp, Ki, Kd, setpoint=SETPOINT)
 
@@ -219,8 +221,7 @@ try:
             # LOGGING
             # ========================
             # >>> UPDATED (added light_state)
-            insert_reading(rid, now, ph, temp, r["co2"], light_state, r["mode"])
-            insert_iae(rid, r["iae"])
+            insert_reading(rid, now, ph, temp, r["co2"], r["mode"])
             insert_performance(rid, r["iae"], r["ise"], r["itae"])
 
             print(
@@ -239,6 +240,12 @@ try:
 
 except KeyboardInterrupt:
     print("\nStopping...")
+
+    for rid, r in reactors.items():
+        insert_summary(rid, r["iae"], r["ise"], r["itae"], r["mode"])
+
+except Exception as e:
+    print(f"\n[FATAL ERROR] {e}")
 
     for rid, r in reactors.items():
         insert_summary(rid, r["iae"], r["ise"], r["itae"], r["mode"])

@@ -141,7 +141,7 @@ def get_status():
 
         for algo, config in reactor_config.items():
             row = conn.execute(
-                "SELECT ph, temp, co2, time FROM readings WHERE reactor_id = ? ORDER BY rowid DESC LIMIT 1",
+                "SELECT ph, temp, co2, mode, time FROM readings WHERE reactor_id = ? ORDER BY rowid DESC LIMIT 1",
                 (config['reactor_id'],)
             ).fetchone()
 
@@ -164,6 +164,7 @@ def get_status():
                     'ph':               row['ph'],
                     'temperature':      row['temp'],
                     'co2':              row['co2'],
+                    'mode':             row['mode'],
                     'config':           config,
                     'algorithm_params': algo_params,
                     'timestamp':        row['time']
@@ -299,6 +300,12 @@ def get_autotune_status():
             "SELECT time FROM readings WHERE reactor_id = 1 AND mode = 'AUTOTUNE' ORDER BY rowid ASC LIMIT 1"
         ).fetchone()
 
+        end_row = conn.execute(
+            "SELECT time FROM readings WHERE reactor_id = 1 AND mode = 'AUTOTUNE' ORDER BY rowid DESC LIMIT 1"
+        ).fetchone()
+
+        autotune_duration = int(os.getenv('AUTOTUNE_DURATION', 180))
+
         conn.close()
 
         return jsonify({
@@ -306,7 +313,7 @@ def get_autotune_status():
             'mode':        mode,
             'ph':          round(ph_row['ph'], 3) if ph_row else None,
             'autotune_start': start_row['time'] if start_row else None,
-            'autotune_duration': 86400,
+            'autotune_duration': autotune_duration,
             'pid': {
                 'kp': round(pid_row['kp'], 4),
                 'ki': round(pid_row['ki'], 4),

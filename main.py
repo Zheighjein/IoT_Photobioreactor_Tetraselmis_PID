@@ -33,7 +33,10 @@ autotune = RelayAutotune(setpoint=SETPOINT)
 
 insert_event(1, "SYSTEM", "Starting autotune", "Relay tuning", "adjusting")
 
-while reactors[1]["mode"] == "AUTOTUNE":
+AUTOTUNE_DURATION = int(os.getenv('AUTOTUNE_DURATION', 180))
+autotune_start = time.time()
+
+while time.time() - autotune_start < AUTOTUNE_DURATION:
     ph, temp = reactors[1]["sim"].step(reactors[1]["co2"])
 
     output = autotune.step(ph)
@@ -42,38 +45,38 @@ while reactors[1]["mode"] == "AUTOTUNE":
     autotune.record(ph)
 
     insert_reading(1, time.time(), ph, temp, reactors[1]["co2"], "AUTOTUNE")
-    insert_event(1, "PH", "Autotuning in progress", "Oscillation", "adjusting")
 
-    amp, per = autotune.get_params()
-
-    if amp and per:
-        pid_vals = autotune.compute_pid(amp, per)
-
-        if pid_vals:
-            Kp, Ki, Kd = pid_vals
-
-            # SAVE PID VALUES
-            insert_pid(1, Kp, Ki, Kd)
-
-            insert_event(1, "SYSTEM", "Autotune complete", "PID parameters ready", "success")
-
-            # APPLY PID VALUES
-            reactors[1]["pid"] = PID(Kp, Ki, Kd, setpoint=SETPOINT)
-
-            # RESET IAE
-            reactors[1]["iae"] = 0
-            reactors[2]["iae"] = 0
-
-            # START BOTH SYSTEMS
-            reactors[1]["mode"] = "PID"
-            reactors[2]["mode"] = "ONOFF"
-
-            insert_event(1, "SYSTEM", "Control started", "PID active", "running")
-            insert_event(2, "SYSTEM", "Control started", "ON/OFF active", "running")
-
-            break
+    elapsed = int(time.time() - autotune_start)
+    print(f"[AUTOTUNE] t={elapsed}s pH={ph:.3f} Temp={temp:.2f} CO2={reactors[1]['co2']}")
 
     time.sleep(DT)
+
+# ========================
+# AFTER AUTOTUNE → COMPUTE PID
+# ========================
+amp, per = autotune.get_params()
+pid_vals = autotune.compute_pid(amp, per) if amp and per else None
+
+if not pid_vals:
+    print("⚠️ Autotune failed → using fallback PID values")
+    Kp, Ki, Kd = 2.0, 0.5, 0.1
+    amp, per, ku = None, None, None
+else:
+    Kp, Ki, Kd = pid_vals
+    ku = (4 * 1.0) / (3.14159 * amp)
+
+insert_pid(1, Kp, Ki, Kd, amp, per, ku)
+insert_event(1, "SYSTEM", "Autotune complete", "PID parameters ready", "success")
+
+reactors[1]["pid"] = PID(Kp, Ki, Kd, setpoint=SETPOINT)
+reactors[1]["iae"] = 0
+reactors[2]["iae"] = 0
+reactors[1]["mode"] = "PID"
+reactors[2]["mode"] = "ONOFF"
+
+insert_event(1, "SYSTEM", "Control started", "PID active", "running")
+insert_event(2, "SYSTEM", "Control started", "ON/OFF active", "running")
+print(f">>> Kp={Kp:.4f} Ki={Ki:.4f} Kd={Kd:.4f} — switching to PID + ON/OFF")
 
 # ========================
 # MAIN LOOP
@@ -115,7 +118,7 @@ try:
 
             # LOGGING
             insert_reading(rid, now, ph, temp, r["co2"], r["mode"])
-            insert_iae(rid, r["iae"])
+            insert_performance(rid, r["iae"], r["ise"], r["itae"])
 
             print(
                 f"[R{rid}] "

@@ -89,7 +89,7 @@ if USE_AUTOTUNE:
             set_co2(1, reactors[1]["co2"])
 
         autotune.record(ph)
-        insert_reading(1, time.time(), ph, temp, reactors[1]["co2"], "AUTOTUNE")
+        insert_reading(1, time.time(), ph, temp, reactors[1]["co2"], "AUTOTUNE", light_state)
 
         print(
             f"[AUTOTUNE] t={elapsed}s "
@@ -221,7 +221,7 @@ try:
             # LOGGING
             # ========================
             # >>> UPDATED (added light_state)
-            insert_reading(rid, now, ph, temp, r["co2"], r["mode"])
+            insert_reading(rid, now, ph, temp, r["co2"], r["mode"], light_state)
             insert_performance(rid, r["iae"], r["ise"], r["itae"])
 
             print(

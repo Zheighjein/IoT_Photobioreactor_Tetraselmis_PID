@@ -40,10 +40,7 @@ def init_db():
         timestamp  REAL,
         kp         REAL,
         ki         REAL,
-        kd         REAL,
-        amplitude  REAL,
-        period     REAL,
-        ku         REAL
+        kd         REAL
     )
     """)
 
@@ -63,7 +60,19 @@ def init_db():
     """)
 
     # ========================
-    # PERFORMANCE LOG (FOR THESIS)
+    # IAE LOG (UNCHANGED)
+    # ========================
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS iae_log (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        reactor_id INTEGER,
+        timestamp  REAL,
+        iae        REAL
+    )
+    """)
+
+    # ========================
+    # NEW: PERFORMANCE LOG (FOR THESIS)
     # ========================
     c.execute("""
     CREATE TABLE IF NOT EXISTS performance_log (
@@ -92,6 +101,19 @@ def init_db():
     )
     """)
 
+    # ========================
+    # SAFE MIGRATIONS
+    # ========================
+    migrations = [
+        "ALTER TABLE summary ADD COLUMN final_ise REAL",
+        "ALTER TABLE summary ADD COLUMN final_itae REAL",
+    ]
+    for sql in migrations:
+        try:
+            c.execute(sql)
+        except sqlite3.OperationalError:
+            pass
+
     conn.commit()
     conn.close()
 
@@ -104,6 +126,7 @@ def insert_reading(rid, t, ph, temp, co2, mode):
     conn = connect()
     c = conn.cursor()
 
+
     c.execute(
         "INSERT INTO readings (reactor_id, time, ph, temp, co2, mode) VALUES (?, ?, ?, ?, ?, ?)",
         (rid, t, ph, temp, co2, mode)
@@ -113,13 +136,13 @@ def insert_reading(rid, t, ph, temp, co2, mode):
     conn.close()
 
 
-def insert_pid(rid, kp, ki, kd, amplitude, period, ku):
+def insert_pid(rid, kp, ki, kd):
     conn = connect()
     c = conn.cursor()
 
     c.execute(
-        "INSERT INTO pid_params (reactor_id, timestamp, kp, ki, kd, amplitude, period, ku) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        (rid, time.time(), kp, ki, kd, amplitude, period, ku)
+        "INSERT INTO pid_params (reactor_id, timestamp, kp, ki, kd) VALUES (?, ?, ?, ?, ?)",
+        (rid, time.time(), kp, ki, kd)
     )
 
     conn.commit()
@@ -139,15 +162,38 @@ def insert_event(rid, param, issue, action, status):
     conn.close()
 
 
+def insert_iae(rid, iae):
+    conn = connect()
+    c = conn.cursor()
+
+    c.execute(
+        "INSERT INTO iae_log (reactor_id, timestamp, iae) VALUES (?, ?, ?)",
+        (rid, time.time(), iae)
+    )
+
+    conn.commit()
+    conn.close()
+
+
+# ========================
+# NEW: INSERT PERFORMANCE
+# ========================
 def insert_performance(rid, iae, ise, itae):
     conn = connect()
     c = conn.cursor()
+
     timestamp = time.time()
     timestamp_text = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
     c.execute(
-        "INSERT INTO performance_log (reactor_id, timestamp, timestamp_text, iae, ise, itae) VALUES (?, ?, ?, ?, ?, ?)",
+        """
+        INSERT INTO performance_log 
+        (reactor_id, timestamp, timestamp_text, iae, ise, itae)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
         (rid, timestamp, timestamp_text, iae, ise, itae)
     )
+
     conn.commit()
     conn.close()
 

@@ -221,7 +221,7 @@ try:
             # LOGGING
             # ========================
             # >>> UPDATED (added light_state)
-            insert_reading(rid, now, ph, temp, r["co2"], light_state, r["mode"])
+            insert_reading(rid, now, ph, temp, r["co2"], r["mode"], light_state)
             insert_performance(rid, r["iae"], r["ise"], r["itae"])
 
             print(

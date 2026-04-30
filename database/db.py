@@ -26,7 +26,8 @@ def init_db():
         ph         REAL,
         temp       REAL,
         co2        INTEGER,
-        mode       TEXT
+        mode       TEXT,
+        light_state INTEGER
     )
     """)
 
@@ -120,11 +121,11 @@ def init_db():
 # INSERT FUNCTIONS
 # ========================
 
-def insert_reading(rid, t, ph, temp, co2, mode):
+def insert_reading(rid, t, ph, temp, co2, mode, light_state):
     conn = connect()
     c = conn.cursor()
     c.execute(
-        "INSERT INTO readings (reactor_id, time, ph, temp, co2, mode) VALUES (?, ?, ?, ?, ?, ?)",
+        "INSERT INTO readings (reactor_id, time, ph, temp, co2, mode, light_state) VALUES (?, ?, ?, ?, ?, ?, ?)",
         (rid, t, ph, temp, co2, mode)
     )
     conn.commit()

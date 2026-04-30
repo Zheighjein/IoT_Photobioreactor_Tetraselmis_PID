@@ -126,7 +126,7 @@ def insert_reading(rid, t, ph, temp, co2, mode, light_state):
     c = conn.cursor()
     c.execute(
         "INSERT INTO readings (reactor_id, time, ph, temp, co2, mode, light_state) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (rid, t, ph, temp, co2, mode)
+        (rid, t, ph, temp, co2, mode, light_state)
     )
     conn.commit()
     conn.close()

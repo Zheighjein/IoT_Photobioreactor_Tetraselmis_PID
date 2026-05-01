@@ -40,9 +40,10 @@ RELAY_1     = 17   # CO2 Reactor 1 - ON OFF
 RELAY_2     = 27   # CO2 Reactor 2
 RELAY_LIGHT = 22   # LIGHT
 
-# Active LOW relay: LOW = ON, HIGH = OFF
-RELAY_ON  = GPIO.LOW
-RELAY_OFF = GPIO.HIGH
+# Active HIGH relay: HIGH = ON, LOW = OFF
+RELAY_ON  = GPIO.HIGH
+RELAY_OFF = GPIO.LOW
+
 
 if not TEST_MODE:
     GPIO.setmode(GPIO.BCM)

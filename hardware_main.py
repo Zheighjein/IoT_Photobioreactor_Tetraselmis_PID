@@ -201,7 +201,7 @@ try:
             # CONTROL
             # ========================
             LOW_BOUND = 7.4
-            HIGH_BOUND = 7.6
+            HIGH_BOUND = 7.52
 
             if r["mode"] == "PID":
                 output = r["pid"].compute(ph)

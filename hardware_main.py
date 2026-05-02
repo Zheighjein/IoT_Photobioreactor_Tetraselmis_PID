@@ -200,18 +200,36 @@ try:
             # ========================
             # CONTROL
             # ========================
+            LOW_BOUND = 7.4
+            HIGH_BOUND = 7.6
+
             if r["mode"] == "PID":
                 output = r["pid"].compute(ph)
 
                 print(f"[PID DEBUG] pH={ph:.3f} Output={output:.3f}")
 
-                if output > 0.05:
-                    r["co2"] = 1
+                if ph > HIGH_BOUND:
+                    # PID controls ON duration
+                    on_time = output * DT   # seconds ON
+                    off_time = DT - on_time
+
+                    if on_time > 0:
+                        r["co2"] = 1
+                        if not TEST_MODE:
+                            set_co2(rid, 1)
+                        time.sleep(on_time)
+
+                    r["co2"] = 0
+                    if not TEST_MODE:
+                        set_co2(rid, 0)
+
+                    if off_time > 0:
+                        time.sleep(off_time)
+
                 else:
                     r["co2"] = 0
-
-                if not TEST_MODE:
-                    set_co2(rid, r["co2"])
+                    if not TEST_MODE:
+                        set_co2(rid, 0)
 
             elif r["mode"] == "ONOFF":
                 action = onoff_control(ph, SETPOINT)

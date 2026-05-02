@@ -213,9 +213,6 @@ try:
                 if not TEST_MODE:
                     set_co2(rid, r["co2"])
 
-if not TEST_MODE:
-    set_co2(rid, r["co2"])
-
             elif r["mode"] == "ONOFF":
                 action = onoff_control(ph, SETPOINT)
                 if action is not None:

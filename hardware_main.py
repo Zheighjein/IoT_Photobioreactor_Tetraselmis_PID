@@ -203,11 +203,15 @@ try:
             if r["mode"] == "PID":
                 output = r["pid"].compute(ph)
 
-                # Convert PID output → ON/OFF
-                if output > 0.05:   # threshold to avoid noise
+                print(f"[PID DEBUG] pH={ph:.3f} Output={output:.3f}")
+
+                if output > 0.05:
                     r["co2"] = 1
                 else:
                     r["co2"] = 0
+
+                if not TEST_MODE:
+                    set_co2(rid, r["co2"])
 
 if not TEST_MODE:
     set_co2(rid, r["co2"])

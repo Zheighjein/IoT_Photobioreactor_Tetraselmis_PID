@@ -1,7 +1,7 @@
 import time
 
 class PID:
-    def __init__(self, Kp, Ki, Kd, setpoint=7.5, output_limits=(-1, 1)):
+    def __init__(self, Kp, Ki, Kd, setpoint=7.5, output_limits=(0, 1)):
         self.Kp = Kp
         self.Ki = Ki
         self.Kd = Kd
@@ -12,7 +12,7 @@ class PID:
         self.integral = 0
         self.last_time = time.time()
 
-        self.min_output, self.max_output = (-1, 1)
+        self.min_output, self.max_output = output_limits
 
     def compute(self, current_value):
         current_time = time.time()
@@ -21,7 +21,8 @@ class PID:
         if dt <= 0:
             return 0
 
-        error = self.setpoint - current_value
+        # FIXED SIGN: positive when pH is HIGH
+        error = current_value - self.setpoint
 
         # Proportional
         P = self.Kp * error
@@ -36,7 +37,7 @@ class PID:
 
         output = P + I + D
 
-        # Clamp output (0 = OFF, 1 = ON)
+        # Clamp output (0 to 1)
         output = max(self.min_output, min(self.max_output, output))
 
         # Save state

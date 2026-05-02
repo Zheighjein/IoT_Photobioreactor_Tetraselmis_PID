@@ -202,10 +202,15 @@ try:
             # ========================
             if r["mode"] == "PID":
                 output = r["pid"].compute(ph)
-                r["co2"] = 1 if output < 0 else 0
 
-                if not TEST_MODE:
-                    set_co2(rid, r["co2"])
+                # Convert PID output → ON/OFF
+                if output > 0.05:   # threshold to avoid noise
+                    r["co2"] = 1
+                else:
+                    r["co2"] = 0
+
+if not TEST_MODE:
+    set_co2(rid, r["co2"])
 
             elif r["mode"] == "ONOFF":
                 action = onoff_control(ph, SETPOINT)

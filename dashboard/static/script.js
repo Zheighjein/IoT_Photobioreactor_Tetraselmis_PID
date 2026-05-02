@@ -150,11 +150,11 @@ function renderLiveParameters(statusJson) {
 
     const ph = active.ph;
     const temperature = active.temperature;
-    const isAdjusting = active.co2 === 1;
+    const phInRange = active.ph >= activeCfg.phMin && active.ph <= activeCfg.phMax;
 
     document.getElementById('val-ph').innerText   = ph.toFixed(2);
     document.getElementById('val-temp').innerText = temperature.toFixed(1);
-    setStatusBadge('ph',   isAdjusting ? 'ADJUSTING' : 'STABLE', isAdjusting ? 'status-adjusting' : 'status-stable');
+    setStatusBadge('ph', phInRange ? 'STABLE' : 'ADJUSTING', phInRange ? 'status-stable' : 'status-adjusting');
     updateStatus('temp', temperature, activeCfg.tempMin, activeCfg.tempMax);
 }
 
@@ -291,7 +291,7 @@ async function pollData() {
                 if (!data.online || !data.timestamp) continue;
                 if ((serverTime - data.timestamp) * 1000 >= 10000) continue;
                 const cfg = reactorConfig[algo];
-                const phStatus   = data.co2 === 1 ? 'ADJUSTING' : 'STABLE';
+                const phStatus   = (data.ph >= cfg.phMin && data.ph <= cfg.phMax) ? 'STABLE' : 'ADJUSTING';
                 const tempStatus = data.temperature < cfg.tempMin || data.temperature > cfg.tempMax ? 'ALERT' : 'STABLE';
                 pushNotif(algo, 'pH',  data.ph.toFixed(2),              phStatus);
                 pushNotif(algo, 'Temp', data.temperature.toFixed(1) + '°C', tempStatus);

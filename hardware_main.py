@@ -210,63 +210,42 @@ try:
             r["ise"] += (error ** 2) * DT
             r["itae"] += t * abs_error * DT
 
+            LOW_BOUND = 7.4
+            HIGH_BOUND = 7.52
 
-        # ========================
-        # CONTROL (HYBRID PID + FIXED CYCLE)
-        # ========================
-        LOW_BOUND = 7.35
-        HIGH_BOUND = 7.55
+            if r["mode"] == "PID":
+                output = r["pid"].compute(ph)
 
-        BASE_ON_TIME = 2.0      # minimum ON time
-        MAX_ON_TIME = 5.0       # cap ON time
-        OFF_MULTIPLIER = 3      # OFF = ON * multiplier (ensures longer OFF)
+                print(f"[PID DEBUG] pH={ph:.3f} Output={output:.3f}")
 
-        now_time = time.time()
+                if ph >= HIGH_BOUND:
+                    on_time = max(2.0, output * DT)
+                    off_time = DT - on_time
 
-        if r["mode"] == "PID":
-            output = r["pid"].compute(ph)
+                    if on_time > 0:
+                        r["co2"] = 1
+                        if not TEST_MODE:
+                            set_co2(rid, 1)
+                        time.sleep(on_time)
 
-            print(f"[PID DEBUG] pH={ph:.3f} Output={output:.3f}")
+                    r["co2"] = 0
+                    if not TEST_MODE:
+                        set_co2(rid, 0)
 
-            if ph >= HIGH_BOUND:
+                    if off_time > 0:
+                        time.sleep(off_time)
 
-                # Convert PID output into ON time
-                on_time = BASE_ON_TIME + (output * DT)
+                else:
+                    r["co2"] = 0
+                    if not TEST_MODE:
+                        set_co2(rid, 0)
 
-                # Clamp ON time
-                on_time = max(BASE_ON_TIME, min(on_time, MAX_ON_TIME))
-
-                # OFF is always longer than ON
-                off_time = on_time * OFF_MULTIPLIER
-
-                print(f"[CO2] ON {on_time:.2f}s | OFF {off_time:.2f}s")
-
-                # ON
-                r["co2"] = 1
-                if not TEST_MODE:
-                    set_co2(rid, 1)
-
-                time.sleep(on_time)
-
-                # OFF
-                r["co2"] = 0
-                if not TEST_MODE:
-                    set_co2(rid, 0)
-
-                time.sleep(off_time)
-
-            elif ph <= LOW_BOUND:
-                # force OFF below safe range
-                r["co2"] = 0
-                if not TEST_MODE:
-                    set_co2(rid, 0)
-
-        elif r["mode"] == "ONOFF":
-            action = onoff_control(ph, SETPOINT)
-            if action is not None:
-                r["co2"] = action
-                if not TEST_MODE:
-                    set_co2(rid, r["co2"])
+            elif r["mode"] == "ONOFF":
+                action = onoff_control(ph, SETPOINT)
+                if action is not None:
+                    r["co2"] = action
+                    if not TEST_MODE:
+                        set_co2(rid, r["co2"])
 
             elif r["mode"] == "IDLE":
                 continue

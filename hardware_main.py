@@ -6,7 +6,6 @@ from controllers.pid import PID
 from controllers.onoff import onoff_control
 from controllers.autotune import RelayAutotune
 
-# >>> ADDED (import light control)
 from controllers.hardware import read_ph, read_temp, set_co2, set_light
 
 from database.db import *
@@ -19,11 +18,38 @@ import RPi.GPIO as GPIO
 load_dotenv()
 init_db()
 
+# >>> LOAD ENV FIRST (FIXED ORDER)
 SETPOINT = float(os.getenv("SP", 7.5))
 DT = float(os.getenv("DT", 5))
 
 TEST_MODE = os.getenv("TEST_MODE", "true").lower() == "true"
 USE_AUTOTUNE = os.getenv("USE_AUTOTUNE", "true").lower() == "true"
+
+# ========================
+# LOAD STATE (FIXED)
+# ========================
+state = load_state()
+
+if state:
+    print("Restoring previous system state...")
+
+    start = state["start_time"]
+
+    reactors = {
+        1: {"co2": 0, "mode": state["r1_mode"], "iae": state["r1_iae"], "ise": state["r1_ise"], "itae": state["r1_itae"]},
+        2: {"co2": 0, "mode": state["r2_mode"], "iae": state["r2_iae"], "ise": state["r2_ise"], "itae": state["r2_itae"]}
+    }
+
+    if state["autotune_done"]:
+        USE_AUTOTUNE = False
+
+else:
+    start = time.time()
+
+    reactors = {
+        1: {"co2": 0, "mode": "AUTOTUNE", "iae": 0, "ise": 0, "itae": 0},
+        2: {"co2": 0, "mode": "IDLE", "iae": 0, "ise": 0, "itae": 0}
+    }
 
 print("=== RUNNING IN HARDWARE MODE ===")
 
@@ -36,21 +62,17 @@ time.sleep(2)
 # ========================
 # LIGHT CONFIG
 # ========================
-# >>> ADDED
-LIGHT_ON_HOURS  = 12    # 12 hours ON
-LIGHT_OFF_HOURS = 12   # 12 hours OFF
+LIGHT_ON_HOURS  = 12
+LIGHT_OFF_HOURS = 12
 LIGHT_CYCLE = (LIGHT_ON_HOURS + LIGHT_OFF_HOURS) * 3600
 
 # ========================
-# REACTORS
+# AUTOTUNE FLAG
 # ========================
-reactors = {
-    1: {"co2": 0, "mode": "AUTOTUNE", "iae": 0, "ise": 0, "itae": 0},
-    2: {"co2": 0, "mode": "IDLE", "iae": 0, "ise": 0, "itae": 0}
-}
+autotune_done_flag = False if USE_AUTOTUNE else True
 
 # ========================
-# AUTOTUNE (1 DAY)
+# AUTOTUNE (UNCHANGED LOGIC, FIXED LIGHT + FLAG)
 # ========================
 if USE_AUTOTUNE:
     autotune = RelayAutotune(setpoint=SETPOINT)
@@ -69,8 +91,8 @@ if USE_AUTOTUNE:
             time.sleep(DT)
             continue
 
-        # >>> ADDED LIGHT CONTROL INSIDE AUTOTUNE
-        elapsed = int(time.time() - autotune_start)
+        # FIXED LIGHT (uses global start, not local)
+        elapsed = int(time.time() - start)
         cycle_time = elapsed % LIGHT_CYCLE
 
         if cycle_time < (LIGHT_ON_HOURS * 3600):
@@ -92,7 +114,7 @@ if USE_AUTOTUNE:
         insert_reading(1, time.time(), ph, temp, reactors[1]["co2"], "AUTOTUNE", light_state)
 
         print(
-            f"[AUTOTUNE] t={elapsed}s "
+            f"[AUTOTUNE] t={int(time.time()-autotune_start)}s "
             f"pH={ph:.3f} "
             f"Temp={temp:.2f} "
             f"CO2={reactors[1]['co2']} "
@@ -103,9 +125,6 @@ if USE_AUTOTUNE:
 
     print(">>> EXITED AUTOTUNE LOOP <<<")
 
-    # ========================
-    # AFTER AUTOTUNE → COMPUTE PID
-    # ========================
     print("Autotune finished. Computing PID...")
 
     amp, per = autotune.get_params()
@@ -131,6 +150,8 @@ if USE_AUTOTUNE:
     reactors[1]["mode"] = "PID"
     reactors[2]["mode"] = "ONOFF"
 
+    autotune_done_flag = True
+
     print(">>> MODE SWITCH SUCCESS <<<")
 
     insert_event(1, "SYSTEM", "Autotune complete", "PID active", "success")
@@ -149,19 +170,13 @@ else:
     reactors[2]["mode"] = "ONOFF"
 
 # ========================
-# MAIN LOOP
+# MAIN LOOP (UNCHANGED + SAVE STATE)
 # ========================
-start = time.time()
-
 try:
     while True:
         t = time.time() - start
         now = time.time()
 
-        # ========================
-        # LIGHT CONTROL (GLOBAL)
-        # ========================
-        # >>> ADDED
         elapsed = int(now - start)
         cycle_time = elapsed % LIGHT_CYCLE
 
@@ -172,7 +187,6 @@ try:
 
         if not TEST_MODE:
             set_light(light_state)
-
             print(f"Light State: {light_state}")
 
         for rid, r in reactors.items():
@@ -192,14 +206,10 @@ try:
             error = SETPOINT - ph
             abs_error = abs(error)
 
-            # METRICS
             r["iae"] += abs_error * DT
             r["ise"] += (error ** 2) * DT
             r["itae"] += t * abs_error * DT
 
-            # ========================
-            # CONTROL
-            # ========================
             LOW_BOUND = 7.4
             HIGH_BOUND = 7.52
 
@@ -208,9 +218,8 @@ try:
 
                 print(f"[PID DEBUG] pH={ph:.3f} Output={output:.3f}")
 
-                if ph > HIGH_BOUND:
-                    # PID controls ON duration
-                    on_time = output * DT   # seconds ON
+                if ph >= HIGH_BOUND:
+                    on_time = max(0.5, output * DT)
                     off_time = DT - on_time
 
                     if on_time > 0:
@@ -241,10 +250,6 @@ try:
             elif r["mode"] == "IDLE":
                 continue
 
-            # ========================
-            # LOGGING
-            # ========================
-            # >>> UPDATED (added light_state)
             insert_reading(rid, now, ph, temp, r["co2"], r["mode"], light_state)
             insert_performance(rid, r["iae"], r["ise"], r["itae"])
 
@@ -260,17 +265,29 @@ try:
                 f"ITAE: {r['itae']:.3f}\n"
             )
 
+        # SAVE STATE (ADDED)
+        save_state({
+            "start_time": start,
+            "r1_iae": reactors[1]["iae"],
+            "r1_ise": reactors[1]["ise"],
+            "r1_itae": reactors[1]["itae"],
+            "r1_mode": reactors[1]["mode"],
+            "r2_iae": reactors[2]["iae"],
+            "r2_ise": reactors[2]["ise"],
+            "r2_itae": reactors[2]["itae"],
+            "r2_mode": reactors[2]["mode"],
+            "autotune_done": autotune_done_flag
+        })
+
         time.sleep(DT)
 
 except KeyboardInterrupt:
     print("\nStopping...")
-
     for rid, r in reactors.items():
         insert_summary(rid, r["iae"], r["ise"], r["itae"], r["mode"])
 
 except Exception as e:
     print(f"\n[FATAL ERROR] {e}")
-
     for rid, r in reactors.items():
         insert_summary(rid, r["iae"], r["ise"], r["itae"], r["mode"])
 

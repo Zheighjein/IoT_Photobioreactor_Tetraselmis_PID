@@ -230,7 +230,9 @@ try:
             if r["mode"] == "PID":
                 output = r["pid"].compute(ph)
 
-                insert_event(rid, "PID", "Compute", f"Output={output:.3f}, pH={ph:.3f}", "running")
+                #FIXED: throttled PID logging
+                if int(t) % 30 == 0 and int((t - DT)) % 30 != 0:
+                    insert_event(rid, "PID", "Compute", f"Output={output:.3f}, pH={ph:.3f}", "running")
 
                 print(f"[PID DEBUG] pH={ph:.3f} Output={output:.3f}")
 
@@ -244,7 +246,7 @@ try:
                             set_co2(rid, 1)
 
                         insert_event(rid, "CO2", "Activated", f"ON for {on_time:.2f}s", "running")
-                        insert_reading(rid, time.time(), ph, temp, 1, r["mode"], light_state)
+                        insert_reading(rid, now, ph, temp, 1, r["mode"], light_state)
 
                         time.sleep(on_time)
 
@@ -253,7 +255,7 @@ try:
                         set_co2(rid, 0)
 
                     insert_event(rid, "CO2", "Deactivated", "Injection stopped", "stopped")
-                    insert_reading(rid, time.time(), ph, temp, 0, r["mode"], light_state)
+                    insert_reading(rid, now, ph, temp, 0, r["mode"], light_state)
 
                     if off_time > 0:
                         time.sleep(off_time)
@@ -276,7 +278,10 @@ try:
             elif r["mode"] == "IDLE":
                 continue
 
-            insert_reading(rid, now, ph, temp, r["co2"], r["mode"], light_state)
+            #Prevent duplicate readings during PID ON/OFF cycle
+            if r["mode"] != "PID" or ph < HIGH_BOUND:
+                insert_reading(rid, now, ph, temp, r["co2"], r["mode"], light_state)
+
             insert_performance(rid, r["iae"], r["ise"], r["itae"])
 
             print(

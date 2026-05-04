@@ -17,6 +17,7 @@ import RPi.GPIO as GPIO
 # ========================
 load_dotenv()
 init_db()
+insert_event(0, "SYSTEM", "Startup", "Main loop started", "running")
 
 # >>> LOAD ENV FIRST (FIXED ORDER)
 SETPOINT = float(os.getenv("SP", 7.5))
@@ -66,6 +67,8 @@ LIGHT_ON_HOURS  = 12
 LIGHT_OFF_HOURS = 12
 LIGHT_CYCLE = (LIGHT_ON_HOURS + LIGHT_OFF_HOURS) * 3600
 
+last_light = None
+
 # ========================
 # AUTOTUNE FLAG
 # ========================
@@ -87,11 +90,11 @@ if USE_AUTOTUNE:
             ph = read_ph(1)
             temp = read_temp("28-0000006dc349")
         except Exception as e:
+            insert_event(1, "SENSOR", "Read Failed", str(e), "error")
             print(f"[ERROR] Sensor read failed: {e}")
             time.sleep(DT)
             continue
 
-        # FIXED LIGHT (uses global start, not local)
         elapsed = int(time.time() - start)
         cycle_time = elapsed % LIGHT_CYCLE
 
@@ -99,6 +102,10 @@ if USE_AUTOTUNE:
             light_state = 1
         else:
             light_state = 0
+
+        if light_state != last_light:
+            insert_event(0, "LIGHT", "Changed", f"Light={light_state}", "running")
+            last_light = light_state
 
         if not TEST_MODE:
             set_light(light_state)
@@ -124,7 +131,6 @@ if USE_AUTOTUNE:
         time.sleep(DT)
 
     print(">>> EXITED AUTOTUNE LOOP <<<")
-
     print("Autotune finished. Computing PID...")
 
     amp, per = autotune.get_params()
@@ -150,6 +156,9 @@ if USE_AUTOTUNE:
     reactors[1]["mode"] = "PID"
     reactors[2]["mode"] = "ONOFF"
 
+    insert_event(1, "MODE", "Switched to PID", "Control active", "running")
+    insert_event(2, "MODE", "Switched to ONOFF", "Control active", "running")
+
     autotune_done_flag = True
 
     print(">>> MODE SWITCH SUCCESS <<<")
@@ -170,7 +179,7 @@ else:
     reactors[2]["mode"] = "ONOFF"
 
 # ========================
-# MAIN LOOP (UNCHANGED + SAVE STATE)
+# MAIN LOOP 
 # ========================
 try:
     while True:
@@ -184,6 +193,10 @@ try:
             light_state = 1
         else:
             light_state = 0
+
+        if light_state != last_light:
+            insert_event(0, "LIGHT", "Changed", f"Light={light_state}", "running")
+            last_light = light_state
 
         if not TEST_MODE:
             set_light(light_state)
@@ -200,6 +213,7 @@ try:
                 ph = read_ph(rid)
 
             except Exception as e:
+                insert_event(rid, "SENSOR", "Read Failed", str(e), "error")
                 print(f"[ERROR] Sensor read failed for R{rid}: {e}")
                 continue
 
@@ -216,6 +230,8 @@ try:
             if r["mode"] == "PID":
                 output = r["pid"].compute(ph)
 
+                insert_event(rid, "PID", "Compute", f"Output={output:.3f}, pH={ph:.3f}", "running")
+
                 print(f"[PID DEBUG] pH={ph:.3f} Output={output:.3f}")
 
                 if ph >= HIGH_BOUND:
@@ -226,16 +242,26 @@ try:
                         r["co2"] = 1
                         if not TEST_MODE:
                             set_co2(rid, 1)
+
+                        insert_event(rid, "CO2", "Activated", f"ON for {on_time:.2f}s", "running")
+                        insert_reading(rid, time.time(), ph, temp, 1, r["mode"], light_state)
+
                         time.sleep(on_time)
 
                     r["co2"] = 0
                     if not TEST_MODE:
                         set_co2(rid, 0)
 
+                    insert_event(rid, "CO2", "Deactivated", "Injection stopped", "stopped")
+                    insert_reading(rid, time.time(), ph, temp, 0, r["mode"], light_state)
+
                     if off_time > 0:
                         time.sleep(off_time)
 
                 else:
+                    if r["co2"] != 0:
+                        insert_event(rid, "CO2", "Deactivated", "Below threshold", "idle")
+
                     r["co2"] = 0
                     if not TEST_MODE:
                         set_co2(rid, 0)
@@ -265,7 +291,6 @@ try:
                 f"ITAE: {r['itae']:.3f}\n"
             )
 
-        # SAVE STATE (ADDED)
         save_state({
             "start_time": start,
             "r1_iae": reactors[1]["iae"],

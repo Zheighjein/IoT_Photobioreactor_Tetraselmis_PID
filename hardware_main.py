@@ -270,8 +270,16 @@ try:
 
             elif r["mode"] == "ONOFF":
                 action = onoff_control(ph, SETPOINT)
+
                 if action is not None:
+
+                    # LOG ONLY WHEN STATE CHANGES
+                    if action != r["co2"]:
+                        state = "Activated" if action == 1 else "Deactivated"
+                        insert_event(rid, "CO2", state, "ON/OFF control", "running")
+
                     r["co2"] = action
+
                     if not TEST_MODE:
                         set_co2(rid, r["co2"])
 

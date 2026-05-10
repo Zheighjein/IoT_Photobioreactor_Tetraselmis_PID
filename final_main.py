@@ -4,8 +4,9 @@ import os
 from dotenv import load_dotenv
 
 from controllers.pid import PID
+from controllers.autotune import RelayAutotune
 from controllers.onoff import onoff_control
-from controllers.heuristic import get_pid_values
+from controllers.heuristic import get_heuristic_pid
 
 from controllers.hardware import (
     read_ph,
@@ -31,8 +32,13 @@ init_db()
 # ========================
 # CONFIG
 # ========================
-SETPOINT = float(os.getenv("SP", 7.5))
-DT = float(os.getenv("DT", 5))
+SETPOINT = float(
+    os.getenv("SP", 7.5)
+)
+
+DT = float(
+    os.getenv("DT", 5)
+)
 
 TEST_MODE = (
     os.getenv("TEST_MODE", "true")
@@ -40,13 +46,11 @@ TEST_MODE = (
 )
 
 # ========================
-# PID VALUES
+# SAFETY LIMITS
 # ========================
-pid_values = get_pid_values()
-
-Kp = pid_values["kp"]
-Ki = pid_values["ki"]
-Kd = pid_values["kd"]
+MAX_KP = 10
+MAX_KI = 5
+MAX_KD = 2
 
 # ========================
 # START EVENT
@@ -55,116 +59,70 @@ insert_event(
     0,
     "SYSTEM",
     "Startup",
-    "final_main.py started",
+    "Relay autotuning enabled",
     "running"
 )
 
-print("===================================")
-print("HEURISTIC PID CONTROLLER ACTIVE")
-print("===================================")
-
-print(f"Kp = {Kp}")
-print(f"Ki = {Ki}")
-print(f"Kd = {Kd}")
-
 # ========================
-# LOAD STATE
+# STATE
 # ========================
 state = load_state()
 
 if state:
 
-    print("Restoring previous state...")
-
     start = state["start_time"]
-
-    reactors = {
-
-        1: {
-            "co2": 0,
-            "mode": "PID",
-
-            "iae": state["r1_iae"],
-            "ise": state["r1_ise"],
-            "itae": state["r1_itae"]
-        },
-
-        2: {
-            "co2": 0,
-            "mode": "ONOFF",
-
-            "iae": state["r2_iae"],
-            "ise": state["r2_ise"],
-            "itae": state["r2_itae"]
-        }
-    }
 
 else:
 
     start = time.time()
 
-    reactors = {
+# ========================
+# REACTORS
+# ========================
+reactors = {
 
-        1: {
-            "co2": 0,
-            "mode": "PID",
+    1: {
+        "co2": 0,
+        "mode": "AUTOTUNE",
 
-            "iae": 0,
-            "ise": 0,
-            "itae": 0
-        },
+        "iae": 0,
+        "ise": 0,
+        "itae": 0,
 
-        2: {
-            "co2": 0,
-            "mode": "ONOFF",
+        "pid_source": None
+    },
 
-            "iae": 0,
-            "ise": 0,
-            "itae": 0
-        }
+    2: {
+        "co2": 0,
+        "mode": "ONOFF",
+
+        "iae": 0,
+        "ise": 0,
+        "itae": 0,
+
+        "pid_source": "ONOFF"
     }
+}
 
 # ========================
-# SAVE PID VALUES
+# AUTOTUNE INIT
 # ========================
-insert_pid(
-    1,
-    Kp,
-    Ki,
-    Kd
-)
-
-# ========================
-# INIT PID
-# ========================
-reactors[1]["pid"] = PID(
-    Kp,
-    Ki,
-    Kd,
-    setpoint=SETPOINT
-)
-
-# ========================
-# MODE EVENTS
-# ========================
-insert_event(
-    1,
-    "MODE",
-    "PID Enabled",
-    "Heuristic PID controller active",
-    "running"
+autotune = RelayAutotune(
+    setpoint=SETPOINT,
+    relay_amplitude=0.2,
+    sample_time=DT
 )
 
 insert_event(
-    2,
-    "MODE",
-    "ONOFF Enabled",
-    "Baseline controller active",
+    1,
+    "AUTOTUNE",
+    "Started",
+    "Relay autotuning initiated",
     "running"
 )
 
 # ========================
-# LIGHT CYCLE
+# LIGHT CONFIG
 # ========================
 LIGHT_ON_HOURS = 12
 LIGHT_OFF_HOURS = 12
@@ -184,17 +142,17 @@ try:
     while True:
 
         now = time.time()
-
         t = now - start
 
         elapsed = int(now - start)
-
         cycle_time = elapsed % LIGHT_CYCLE
 
         # ========================
         # LIGHT CONTROL
         # ========================
-        if cycle_time < (LIGHT_ON_HOURS * 3600):
+        if cycle_time < (
+            LIGHT_ON_HOURS * 3600
+        ):
             light_state = 1
         else:
             light_state = 0
@@ -242,15 +200,10 @@ try:
                     "error"
                 )
 
-                print(
-                    f"[ERROR] "
-                    f"Sensor failure R{rid}: {e}"
-                )
-
                 continue
 
             # ========================
-            # ERROR METRICS
+            # METRICS
             # ========================
             error = SETPOINT - ph
             abs_error = abs(error)
@@ -260,19 +213,133 @@ try:
             r["itae"] += t * abs_error * DT
 
             # ========================
-            # PID CONTROL
+            # AUTOTUNE MODE
             # ========================
-            if r["mode"] == "PID":
+            if r["mode"] == "AUTOTUNE":
 
-                output = r["pid"].compute(ph)
+                output = autotune.step(ph)
+
+                r["co2"] = output
+
+                if not TEST_MODE:
+                    set_co2(rid, output)
+
+                insert_reading(
+                    rid,
+                    now,
+                    ph,
+                    temp,
+                    output,
+                    r["mode"],
+                    light_state
+                )
+
+                # ========================
+                # AUTOTUNE COMPLETE
+                # ========================
+                if autotune.is_finished():
+
+                    kp, ki, kd = (
+                        autotune.get_params()
+                    )
+
+                    amplitude = autotune.amplitude
+                    period = autotune.period
+                    ku = autotune.ku
+
+                    # ========================
+                    # SAFETY CHECK
+                    # ========================
+                    unsafe = (
+
+                        kp > MAX_KP or
+                        ki > MAX_KI or
+                        kd > MAX_KD or
+
+                        kp <= 0 or
+                        ki <= 0 or
+                        kd < 0
+                    )
+
+                    # ========================
+                    # FALLBACK
+                    # ========================
+                    if unsafe:
+
+                        kp, ki, kd = (
+                            get_heuristic_pid()
+                        )
+
+                        pid_source = "HEURISTIC"
+
+                        insert_event(
+                            1,
+                            "PID",
+                            "Fallback Activated",
+                            (
+                                "Unsafe autotune gains "
+                                "detected. "
+                                "Using heuristic PID."
+                            ),
+                            "warning"
+                        )
+
+                    else:
+
+                        pid_source = "AUTOTUNE"
+
+                        insert_event(
+                            1,
+                            "PID",
+                            "Autotune Success",
+                            (
+                                f"Kp={kp:.3f}, "
+                                f"Ki={ki:.3f}, "
+                                f"Kd={kd:.3f}"
+                            ),
+                            "running"
+                        )
+
+                    # ========================
+                    # STORE PID
+                    # ========================
+                    insert_pid(
+                        1,
+                        kp,
+                        ki,
+                        kd,
+                        amplitude,
+                        period,
+                        ku,
+                        pid_source
+                    )
+
+                    # ========================
+                    # INIT PID
+                    # ========================
+                    reactors[1]["pid"] = PID(
+                        kp,
+                        ki,
+                        kd,
+                        setpoint=SETPOINT
+                    )
+
+                    reactors[1]["mode"] = "PID"
+
+                    reactors[1]["pid_source"] = (
+                        pid_source
+                    )
+
+            # ========================
+            # PID MODE
+            # ========================
+            elif r["mode"] == "PID":
+
+                output = (
+                    r["pid"].compute(ph)
+                )
 
                 HIGH_BOUND = 7.52
-
-                print(
-                    f"[PID] "
-                    f"pH={ph:.3f} "
-                    f"Output={output:.3f}"
-                )
 
                 if ph >= HIGH_BOUND:
 
@@ -281,9 +348,10 @@ try:
                         output * DT
                     )
 
-                    off_time = DT - on_time
+                    off_time = (
+                        DT - on_time
+                    )
 
-                    # CO2 ON
                     if on_time > 0:
 
                         r["co2"] = 1
@@ -291,49 +359,12 @@ try:
                         if not TEST_MODE:
                             set_co2(rid, 1)
 
-                        insert_event(
-                            rid,
-                            "CO2",
-                            "Activated",
-                            f"ON for {on_time:.2f}s",
-                            "running"
-                        )
-
-                        insert_reading(
-                            rid,
-                            now,
-                            ph,
-                            temp,
-                            1,
-                            r["mode"],
-                            light_state
-                        )
-
                         time.sleep(on_time)
 
-                    # CO2 OFF
                     r["co2"] = 0
 
                     if not TEST_MODE:
                         set_co2(rid, 0)
-
-                    insert_event(
-                        rid,
-                        "CO2",
-                        "Deactivated",
-                        "Injection stopped",
-                        "idle"
-                    )
-
-                    insert_reading(
-                        rid,
-                        now,
-                        ph,
-                        temp,
-                        0,
-                        r["mode"],
-                        light_state
-                    )
 
                     if off_time > 0:
                         time.sleep(off_time)
@@ -346,7 +377,7 @@ try:
                         set_co2(rid, 0)
 
             # ========================
-            # ON/OFF CONTROL
+            # ON/OFF
             # ========================
             elif r["mode"] == "ONOFF":
 
@@ -357,32 +388,16 @@ try:
 
                 if action is not None:
 
-                    if action != r["co2"]:
-
-                        state_name = (
-                            "Activated"
-                            if action == 1
-                            else "Deactivated"
-                        )
-
-                        insert_event(
-                            rid,
-                            "CO2",
-                            state_name,
-                            "ONOFF control",
-                            "running"
-                        )
-
                     r["co2"] = action
 
                     if not TEST_MODE:
                         set_co2(
                             rid,
-                            r["co2"]
+                            action
                         )
 
             # ========================
-            # SAVE READING
+            # STORE READING
             # ========================
             insert_reading(
                 rid,
@@ -395,7 +410,7 @@ try:
             )
 
             # ========================
-            # SAVE PERFORMANCE
+            # STORE PERFORMANCE
             # ========================
             insert_performance(
                 rid,
@@ -404,19 +419,13 @@ try:
                 r["itae"]
             )
 
-            # ========================
-            # CONSOLE
-            # ========================
             print(
-                f"\nR{rid} -----------\n"
+                f"\nR{rid} ---------\n"
+                f"Mode: {r['mode']}\n"
                 f"pH: {ph:.3f}\n"
                 f"Temp: {temp:.2f}\n"
                 f"CO2: {r['co2']}\n"
-                f"Light: {light_state}\n"
-                f"Mode: {r['mode']}\n"
                 f"IAE: {r['iae']:.3f}\n"
-                f"ISE: {r['ise']:.3f}\n"
-                f"ITAE: {r['itae']:.3f}\n"
             )
 
         # ========================
@@ -436,14 +445,13 @@ try:
             "r2_itae": reactors[2]["itae"],
             "r2_mode": reactors[2]["mode"],
 
-            "pid_initialized": True
+            "autotune_done": (
+                reactors[1]["mode"] == "PID"
+            )
         })
 
         time.sleep(DT)
 
-# ========================
-# CTRL+C
-# ========================
 except KeyboardInterrupt:
 
     print("\nStopping system...")
@@ -455,29 +463,14 @@ except KeyboardInterrupt:
             r["iae"],
             r["ise"],
             r["itae"],
-            r["mode"]
+            r["mode"],
+            r["pid_source"]
         )
 
-# ========================
-# FATAL ERROR
-# ========================
 except Exception as e:
 
     print(f"\n[FATAL ERROR] {e}")
 
-    for rid, r in reactors.items():
-
-        insert_summary(
-            rid,
-            r["iae"],
-            r["ise"],
-            r["itae"],
-            r["mode"]
-        )
-
-# ========================
-# CLEANUP
-# ========================
 finally:
 
     if not TEST_MODE:

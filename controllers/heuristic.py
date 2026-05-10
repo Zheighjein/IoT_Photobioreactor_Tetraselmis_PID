@@ -1,18 +1,18 @@
 """
-Heuristic PID Parameters
-Selected through offline simulation
-and performance metric evaluation.
+Fallback heuristic PID parameters
+used when relay autotuning produces
+unsafe or unstable gains.
 """
 
-Kp = 2.0
-Ki = 0.5
-Kd = 0.1
+HEURISTIC_KP = 2.0
+HEURISTIC_KI = 0.5
+HEURISTIC_KD = 0.1
 
 
-def get_pid_values():
+def get_heuristic_pid():
 
-    return {
-        "kp": Kp,
-        "ki": Ki,
-        "kd": Kd
-    }
+    return (
+        HEURISTIC_KP,
+        HEURISTIC_KI,
+        HEURISTIC_KD
+    )

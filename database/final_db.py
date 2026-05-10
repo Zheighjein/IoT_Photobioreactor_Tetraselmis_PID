@@ -17,7 +17,7 @@ def init_db():
     c = conn.cursor()
 
     # ========================
-    # READINGS TABLE
+    # READINGS
     # ========================
     c.execute("""
     CREATE TABLE IF NOT EXISTS readings (
@@ -42,12 +42,16 @@ def init_db():
         timestamp REAL,
         kp REAL,
         ki REAL,
-        kd REAL
+        kd REAL,
+        amplitude REAL,
+        period REAL,
+        ku REAL,
+        pid_source TEXT
     )
     """)
 
     # ========================
-    # EVENTS TABLE
+    # EVENTS
     # ========================
     c.execute("""
     CREATE TABLE IF NOT EXISTS events (
@@ -77,7 +81,7 @@ def init_db():
     """)
 
     # ========================
-    # SUMMARY TABLE
+    # SUMMARY
     # ========================
     c.execute("""
     CREATE TABLE IF NOT EXISTS summary (
@@ -87,6 +91,7 @@ def init_db():
         final_ise REAL,
         final_itae REAL,
         mode TEXT,
+        pid_source TEXT,
         timestamp REAL
     )
     """)
@@ -110,7 +115,7 @@ def init_db():
         r2_itae REAL,
         r2_mode TEXT,
 
-        pid_initialized INTEGER
+        autotune_done INTEGER
     )
     """)
 
@@ -152,20 +157,36 @@ def insert_reading(
     conn.close()
 
 
-def insert_pid(rid, kp, ki, kd):
+def insert_pid(
+    rid,
+    kp,
+    ki,
+    kd,
+    amplitude,
+    period,
+    ku,
+    pid_source
+):
 
     conn = connect()
     c = conn.cursor()
 
     c.execute("""
     INSERT INTO pid_params
-    VALUES (NULL, ?, ?, ?, ?, ?)
+    VALUES (
+        NULL,
+        ?, ?, ?, ?, ?, ?, ?, ?, ?
+    )
     """, (
         rid,
         time.time(),
         kp,
         ki,
-        kd
+        kd,
+        amplitude,
+        period,
+        ku,
+        pid_source
     ))
 
     conn.commit()
@@ -185,7 +206,10 @@ def insert_event(
 
     c.execute("""
     INSERT INTO events
-    VALUES (NULL, ?, ?, ?, ?, ?, ?)
+    VALUES (
+        NULL,
+        ?, ?, ?, ?, ?, ?
+    )
     """, (
         rid,
         time.time(),
@@ -211,11 +235,16 @@ def insert_performance(
 
     c.execute("""
     INSERT INTO performance_log
-    VALUES (NULL, ?, ?, ?, ?, ?, ?)
+    VALUES (
+        NULL,
+        ?, ?, ?, ?, ?, ?
+    )
     """, (
         rid,
         time.time(),
-        datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        datetime.now().strftime(
+            "%Y-%m-%d %H:%M:%S"
+        ),
         iae,
         ise,
         itae
@@ -230,7 +259,8 @@ def insert_summary(
     iae,
     ise,
     itae,
-    mode
+    mode,
+    pid_source
 ):
 
     conn = connect()
@@ -238,13 +268,17 @@ def insert_summary(
 
     c.execute("""
     INSERT INTO summary
-    VALUES (NULL, ?, ?, ?, ?, ?, ?)
+    VALUES (
+        NULL,
+        ?, ?, ?, ?, ?, ?, ?
+    )
     """, (
         rid,
         iae,
         ise,
         itae,
         mode,
+        pid_source,
         time.time()
     ))
 
@@ -253,7 +287,7 @@ def insert_summary(
 
 
 # ========================
-# STATE SAVE
+# SAVE STATE
 # ========================
 
 def save_state(data):
@@ -277,9 +311,12 @@ def save_state(data):
         r2_itae,
         r2_mode,
 
-        pid_initialized
+        autotune_done
 
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (
+        ?, ?, ?, ?, ?, ?,
+        ?, ?, ?, ?, ?
+    )
     """, (
 
         time.time(),
@@ -295,7 +332,7 @@ def save_state(data):
         data["r2_itae"],
         data["r2_mode"],
 
-        data["pid_initialized"]
+        data["autotune_done"]
 
     ))
 
@@ -336,5 +373,5 @@ def load_state():
         "r2_itae": row[9],
         "r2_mode": row[10],
 
-        "pid_initialized": bool(row[11])
+        "autotune_done": bool(row[11])
     }

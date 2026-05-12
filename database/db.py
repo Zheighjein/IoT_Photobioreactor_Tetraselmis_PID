@@ -26,6 +26,12 @@ def init_db():
     )
     """)
 
+    # migrate: add light_state if old DB lacks it
+    try:
+        c.execute("ALTER TABLE readings ADD COLUMN light_state INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass  # column already exists
+
     c.execute("""
     CREATE TABLE IF NOT EXISTS pid_params (
         id INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -277,43 +277,17 @@ def get_notifications():
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 
-@app.route('/api/autotune')
-def get_autotune_status():
+@app.route('/api/pid_params')
+def get_pid_params():
     try:
         conn = get_db_connection()
-
-        row = conn.execute(
-            "SELECT mode FROM readings WHERE reactor_id = 1 ORDER BY rowid DESC LIMIT 1"
-        ).fetchone()
-
-        mode = row['mode'] if row else 'AUTOTUNE'
-
         pid_row = conn.execute(
             "SELECT kp, ki, kd FROM pid_params WHERE reactor_id = 1 ORDER BY rowid DESC LIMIT 1"
         ).fetchone()
-
-        ph_row = conn.execute(
-            "SELECT ph FROM readings WHERE reactor_id = 1 ORDER BY rowid DESC LIMIT 1"
-        ).fetchone()
-
-        start_row = conn.execute(
-            "SELECT time FROM readings WHERE reactor_id = 1 AND mode = 'AUTOTUNE' ORDER BY rowid ASC LIMIT 1"
-        ).fetchone()
-
-        end_row = conn.execute(
-            "SELECT time FROM readings WHERE reactor_id = 1 AND mode = 'AUTOTUNE' ORDER BY rowid DESC LIMIT 1"
-        ).fetchone()
-
-        autotune_duration = int(os.getenv('AUTOTUNE_DURATION', 180))
-
         conn.close()
 
         return jsonify({
-            'status':      'success',
-            'mode':        mode,
-            'ph':          round(ph_row['ph'], 3) if ph_row else None,
-            'autotune_start': start_row['time'] if start_row else None,
-            'autotune_duration': autotune_duration,
+            'status': 'success',
             'pid': {
                 'kp': round(pid_row['kp'], 4),
                 'ki': round(pid_row['ki'], 4),
@@ -322,7 +296,7 @@ def get_autotune_status():
         })
 
     except Exception as e:
-        print(f"Flask /api/autotune error: {e}")
+        print(f"Flask /api/pid_params error: {e}")
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 

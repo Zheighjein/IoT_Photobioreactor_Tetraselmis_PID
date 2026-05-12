@@ -126,12 +126,8 @@ function renderLiveParameters(statusJson) {
     }
 
     const serverTime  = statusJson.server_time;
-    const pidData     = statusJson.reactors['PID'];
-    const isAutotune  = pidData?.mode === 'AUTOTUNE';
-
-    // During autotune show R1; after autotune show selected algorithm
-    const reactorData = isAutotune ? pidData : statusJson.reactors[currentAlgorithm];
-    const config      = reactorData?.config || reactorConfig[isAutotune ? 'PID' : currentAlgorithm];
+    const reactorData = statusJson.reactors[currentAlgorithm];
+    const config      = reactorData?.config || reactorConfig[currentAlgorithm];
     const isFresh     = reactorData?.online && reactorData?.timestamp &&
                         ((serverTime - reactorData.timestamp) * 1000) < 15000;
 
@@ -187,80 +183,17 @@ function renderSystemStatus(statusJson) {
     }
 }
 
-// ==================== AUTOTUNE ====================
-let countdownInterval = null;
-let lastAutotuneStart = null;
-
-function formatCountdown(seconds) {
-    if (seconds <= 0) return '00:00:00';
-    const h = Math.floor(seconds / 3600);
-    const m = Math.floor((seconds % 3600) / 60);
-    const s = Math.floor(seconds % 60);
-    return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
-}
-
-async function pollAutotune() {
+// ==================== PID PARAMS ====================
+async function fetchPidParams() {
     try {
-        const res = await fetch('/api/autotune');
+        const res  = await fetch('/api/pid_params');
         const json = await res.json();
-        if (json.status !== 'success') return;
-
-        const banner     = document.getElementById('autotune-banner');
-        const selector   = document.getElementById('algorithm-selector');
-        const isAutotune = json.mode === 'AUTOTUNE';
-
-        banner.classList.remove('hidden');
-
-        if (isAutotune && json.ph !== null && json.ph !== undefined)
-            document.getElementById('autotune-ph').innerText = json.ph.toFixed(3);
-
-        // Push live autotune pH into PBR-1 chart
-        if (isAutotune && json.ph !== null) {
-            const now = new Date().toLocaleTimeString();
-            if (phChart) {
-                phChart.data.labels.push(now);
-                phChart.data.datasets[0].data.push(json.ph);
-                if (phChart.data.labels.length > MAX_POINTS_PH) {
-                    phChart.data.labels.shift();
-                    phChart.data.datasets[0].data.shift();
-                }
-                phChart.update('none');
-            }
-            document.getElementById('val-ph').innerText = json.ph.toFixed(2);
-        }
-
-        if (isAutotune) {
-            selector.style.display = 'none';
-            document.getElementById('autotune-dot').className = 'w-3 h-3 bg-amber-400 rounded-full animate-pulse';
-            document.getElementById('autotune-title').innerText = 'Autotune In Progress';
-            document.getElementById('autotune-title').className = 'font-bold text-amber-800 uppercase tracking-widest text-sm';
-
-            if (json.autotune_start && json.autotune_start !== lastAutotuneStart) {
-                lastAutotuneStart = json.autotune_start;
-                if (countdownInterval) clearInterval(countdownInterval);
-                const endTime = json.autotune_start + json.autotune_duration;
-                countdownInterval = setInterval(() => {
-                    const remaining = endTime - (Date.now() / 1000);
-                    document.getElementById('autotune-countdown').innerText = formatCountdown(remaining);
-                }, 1000);
-            }
-        } else {
-            selector.style.display = '';
-            if (countdownInterval) { clearInterval(countdownInterval); countdownInterval = null; }
-            document.getElementById('autotune-dot').className = 'w-3 h-3 bg-green-500 rounded-full';
-            document.getElementById('autotune-title').innerText = 'Autotune Complete';
-            document.getElementById('autotune-title').className = 'font-bold text-green-700 uppercase tracking-widest text-sm';
-            document.getElementById('autotune-countdown').innerText = 'Done';
-            document.getElementById('autotune-transition').classList.remove('hidden');
-            if (json.pid) {
-                document.getElementById('autotune-pid-result').classList.remove('hidden');
-                document.getElementById('autotune-kp').innerText = json.pid.kp;
-                document.getElementById('autotune-ki').innerText = json.pid.ki;
-                document.getElementById('autotune-kd').innerText = json.pid.kd;
-            }
-        }
+        if (json.status !== 'success' || !json.pid) return;
+        document.getElementById('pid-param-kp').innerText = json.pid.kp;
+        document.getElementById('pid-param-ki').innerText = json.pid.ki;
+        document.getElementById('pid-param-kd').innerText = json.pid.kd;
     } catch (e) {
-        console.warn('Autotune poll error:', e);
+        console.warn('PID params fetch error:', e);
     }
 }
 
@@ -313,8 +246,7 @@ async function pollData() {
 function updateChartsFromHistory(data) {
     if (!systemActive) return;
 
-    const isAutotune = latestStatus?.reactors?.['PID']?.mode === 'AUTOTUNE';
-    const store = isAutotune ? data['PID'] : data[currentAlgorithm];
+    const store = data[currentAlgorithm];
     if (!store || !store.ph.length) return;
 
     const phData   = store.ph.slice(-MAX_POINTS_PH);
@@ -620,7 +552,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
     renderNotifList();
 
-    await pollAutotune();
     await pollData();
-    pollInterval = setInterval(async () => { await pollAutotune(); await pollData(); }, 5000);
+    pollInterval = setInterval(pollData, 5000);
 });
